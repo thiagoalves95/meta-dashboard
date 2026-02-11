@@ -257,7 +257,7 @@ class WindsorClient:
         progress_cb=None,
     ) -> pd.DataFrame:
         fields = [
-            "date", "account_name", "campaign", "campaign_objective",
+            "date", "account_name", "campaign", "campaign_id", "campaign_objective",
             "adset_name", "adset_id", "adset_status",
             *self._PERFORMANCE, *self._FUNNEL, *self._ENGAGEMENT, *self._VIDEO,
         ]
@@ -272,7 +272,7 @@ class WindsorClient:
         progress_cb=None,
     ) -> pd.DataFrame:
         fields = [
-            "date", "account_name", "campaign", "campaign_objective",
+            "date", "account_name", "campaign", "campaign_id", "campaign_objective",
             "adset_name", "ad_name", "ad_id", "ad_status",
             *self._PERFORMANCE, *self._FUNNEL, *self._ENGAGEMENT, *self._VIDEO,
             *self._QUALITY, *self._CREATIVE_ASSETS,

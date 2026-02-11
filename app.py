@@ -246,6 +246,20 @@ if obj_mode != "Todas":
     df_adset = df_adset[df_adset["_cat"] == obj_mode]
     df_ad = df_ad[df_ad["_cat"] == obj_mode]
 
+
+# ── Helper: filter by campaign_id set (robust cross-level matching) ──────────
+def _filter_by_ids(df, ids):
+    """Filter dataframe by campaign_id set."""
+    if "campaign_id" in df.columns:
+        return df[df["campaign_id"].isin(ids)]
+    if "campaign" in df.columns:
+        # Fallback: map campaign names from df_camp for those IDs
+        names = df_camp[df_camp["campaign_id"].isin(ids)]["campaign"].unique() \
+            if "campaign_id" in df_camp.columns else set()
+        return df[df["campaign"].isin(names)]
+    return df
+
+
 # ── Campaign filter ──────────────────────────────────────────────────────────
 campaigns = (
     ["Todas"] + sorted(df_camp["campaign"].dropna().unique().tolist())
@@ -254,10 +268,20 @@ campaigns = (
 with st.sidebar:
     sel_campaign = st.selectbox("Campanha", campaigns)
 
-if sel_campaign != "Todas":
-    df_camp = df_camp[df_camp["campaign"] == sel_campaign] if not df_camp.empty else df_camp
-    df_adset = df_adset[df_adset["campaign"] == sel_campaign] if not df_adset.empty else df_adset
-    df_ad = df_ad[df_ad["campaign"] == sel_campaign] if not df_ad.empty else df_ad
+# Use campaign_id for cross-level filtering
+sel_campaign_ids = set()
+if sel_campaign != "Todas" and not df_camp.empty:
+    if "campaign_id" in df_camp.columns:
+        sel_campaign_ids = set(
+            df_camp[df_camp["campaign"] == sel_campaign]["campaign_id"].dropna().unique()
+        )
+    # Filter core dataframes
+    df_camp = df_camp[df_camp["campaign"] == sel_campaign]
+    df_adset = _filter_by_ids(df_adset, sel_campaign_ids) if sel_campaign_ids else \
+        df_adset[df_adset["campaign"] == sel_campaign] if not df_adset.empty else df_adset
+    df_ad = _filter_by_ids(df_ad, sel_campaign_ids) if sel_campaign_ids else \
+        df_ad[df_ad["campaign"] == sel_campaign] if not df_ad.empty else df_ad
+
 
 # ── Keyword search filter ────────────────────────────────────────────────────
 with st.sidebar:
@@ -267,7 +291,7 @@ with st.sidebar:
         help="Filtra por nome de Campanha, Conjunto de Anúncios ou Criativo.",
     )
 
-matched_campaigns = set()
+matched_ids = set()
 if keyword:
     kw = keyword.strip().lower()
 
@@ -279,8 +303,7 @@ if keyword:
                 mask = mask | df[c].astype(str).str.lower().str.contains(kw, na=False)
         return df[mask]
 
-    # Find matching campaign names across all levels
-    matched_campaigns = set()
+    # Find matching campaign_ids across ALL levels
     for _df, _cols in [
         (df_camp, ["campaign"]),
         (df_adset, ["campaign", "adset_name"]),
@@ -288,14 +311,21 @@ if keyword:
     ]:
         if not _df.empty:
             hits = _kw_match(_df, _cols)
-            if "campaign" in hits.columns:
-                matched_campaigns.update(hits["campaign"].dropna().unique())
+            if "campaign_id" in hits.columns:
+                matched_ids.update(hits["campaign_id"].dropna().unique())
+            elif "campaign" in hits.columns:
+                # Fallback: resolve IDs via df_camp
+                names = hits["campaign"].dropna().unique()
+                if "campaign_id" in df_camp.columns:
+                    matched_ids.update(
+                        df_camp[df_camp["campaign"].isin(names)]["campaign_id"].dropna().unique()
+                    )
 
-    # Filter: keep full campaign if keyword matches at ANY level
-    if matched_campaigns:
-        df_camp = df_camp[df_camp["campaign"].isin(matched_campaigns)] if not df_camp.empty else df_camp
-        df_adset = df_adset[df_adset["campaign"].isin(matched_campaigns)] if not df_adset.empty else df_adset
-        df_ad = df_ad[df_ad["campaign"].isin(matched_campaigns)] if not df_ad.empty else df_ad
+    # Filter: keep FULL campaign if keyword matches at ANY level
+    if matched_ids:
+        df_camp = _filter_by_ids(df_camp, matched_ids) if not df_camp.empty else df_camp
+        df_adset = _filter_by_ids(df_adset, matched_ids) if not df_adset.empty else df_adset
+        df_ad = _filter_by_ids(df_ad, matched_ids) if not df_ad.empty else df_ad
     else:
         df_camp = df_camp.iloc[0:0]
         df_adset = df_adset.iloc[0:0]
@@ -310,14 +340,18 @@ _c = WindsorClient(api_key)
 _dfrom, _dto = str(date_from), str(date_to)
 
 def _apply_filters(df):
-    """Apply objective, campaign, and keyword filters to a lazy-loaded df."""
+    """Apply objective, campaign_id, and keyword filters to a lazy-loaded df."""
     df = _classify(df)
     if obj_mode != "Todas":
         df = df[df["_cat"] == obj_mode]
-    if sel_campaign != "Todas" and "campaign" in df.columns:
+    if sel_campaign_ids:
+        df = _filter_by_ids(df, sel_campaign_ids)
+    elif sel_campaign != "Todas" and "campaign" in df.columns:
         df = df[df["campaign"] == sel_campaign]
-    if keyword and "campaign" in df.columns:
-        df = df[df["campaign"].isin(matched_campaigns)] if matched_campaigns else df.iloc[0:0]
+    if keyword and matched_ids:
+        df = _filter_by_ids(df, matched_ids)
+    elif keyword:
+        df = df.iloc[0:0]
     return df
 
 def _get_demo():
@@ -334,10 +368,12 @@ def _get_daily_camp():
 
 def _get_daily_ad():
     df = _lazy("_daily_ad", lambda: _c.get_ad_daily(_dfrom, _dto, acct))
-    if keyword and "ad_name" in df.columns and matched_campaigns:
-        # For daily ad, filter by ad names that belong to matched campaigns
-        matched_ads = df_ad["ad_name"].unique() if not df_ad.empty else []
-        df = df[df["ad_name"].isin(matched_ads)] if len(matched_ads) > 0 else df
+    # Filter by ad_names from the already-filtered df_ad
+    if not df_ad.empty and "ad_name" in df.columns:
+        valid_ads = df_ad["ad_name"].unique()
+        df = df[df["ad_name"].isin(valid_ads)]
+    elif sel_campaign != "Todas" or keyword:
+        df = df.iloc[0:0]
     return df
 
 
