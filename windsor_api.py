@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,7 +13,7 @@ _MAX_RETRIES = 3
 _QUARTER_DAYS = 90  # chunk size for daily data
 _WORKERS = 4        # parallel threads
 
-# All numeric fields that may come from Windsor.ai
+# All numeric fields that may come from Windsor.ai (kept for backwards compat)
 NUMERIC_FIELDS = [
     "impressions", "clicks", "spend", "ctr", "cpc", "cpm",
     "reach", "frequency",
@@ -56,6 +57,8 @@ class WindsorClient:
 
     def __init__(self, api_key: str):
         self.api_key = api_key
+        self._numeric_fields = list(NUMERIC_FIELDS)
+        self._optional_groups = list(_OPTIONAL_GROUPS)
 
     # ── Low-level request ─────────────────────────────────────────────────
     def _do_request(self, fields: list[str], date_from: str, date_to: str,
@@ -91,7 +94,7 @@ class WindsorClient:
                                         account_name, date_aggregation, filters)
                 if resp.status_code == 400:
                     remaining = list(fields)
-                    for group in _OPTIONAL_GROUPS:
+                    for group in self._optional_groups:
                         before = len(remaining)
                         remaining = [f for f in remaining if f not in group]
                         if len(remaining) < before:
@@ -108,7 +111,7 @@ class WindsorClient:
                     return pd.DataFrame(columns=fields)
 
                 df = pd.DataFrame(rows)
-                for col in NUMERIC_FIELDS:
+                for col in self._numeric_fields:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
                 if "date" in df.columns:
@@ -337,4 +340,167 @@ class WindsorClient:
         return self._fetch(fields, date_from, date_to, account_name,
                            date_aggregation="month",
                            filters=[["spend", "gt", 0]],
+                           progress_cb=progress_cb)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GA4 CLIENT — Google Analytics 4 via Windsor.ai
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _camel_to_snake(name: str) -> str:
+    """Convert camelCase to snake_case."""
+    return re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", name).lower()
+
+
+class GA4Client(WindsorClient):
+    """Windsor.ai client for Google Analytics 4 data."""
+
+    BASE_URL = "https://connectors.windsor.ai/googleanalytics4"
+
+    _GA4_NUMERIC_FIELDS = [
+        "sessions", "users", "newUsers", "bounceRate", "engagementRate",
+        "screenPageViews", "averageSessionDuration", "sessionsPerUser",
+        "conversions", "transactionRevenue", "eventCount",
+        # snake_case variants that Windsor may return
+        "new_users", "bounce_rate", "engagement_rate",
+        "screen_page_views", "average_session_duration", "sessions_per_user",
+        "transaction_revenue", "event_count",
+    ]
+
+    _GA4_OPTIONAL_GROUPS = [
+        ["eventCount", "event_count"],
+        ["sessionsPerUser", "sessions_per_user"],
+        ["averageSessionDuration", "average_session_duration"],
+        ["screenPageViews", "screen_page_views"],
+        ["transactionRevenue", "transaction_revenue"],
+        ["conversions"],
+        ["engagementRate", "engagement_rate"],
+        ["bounceRate", "bounce_rate"],
+        ["newUsers", "new_users"],
+        ["region"],
+        ["country"],
+        ["deviceCategory", "device_category"],
+        ["pagePath", "page_path"],
+        ["medium"],
+        ["campaign"],
+        ["source"],
+    ]
+
+    def __init__(self, api_key: str):
+        super().__init__(api_key)
+        self._numeric_fields = list(self._GA4_NUMERIC_FIELDS)
+        self._optional_groups = list(self._GA4_OPTIONAL_GROUPS)
+
+    # ── Override _fetch_single to add snake_case fallback + rate normalisation
+    def _fetch_single(
+        self, fields: list[str], date_from: str, date_to: str,
+        account_name: str | None = None,
+        date_aggregation: str | None = None,
+        filters: list | None = None,
+    ) -> pd.DataFrame:
+        try:
+            df = super()._fetch_single(
+                fields, date_from, date_to,
+                account_name, date_aggregation, filters,
+            )
+        except requests.exceptions.HTTPError:
+            # Fallback: try snake_case field names
+            snake_fields = [_camel_to_snake(f) for f in fields]
+            df = super()._fetch_single(
+                snake_fields, date_from, date_to,
+                account_name, date_aggregation, filters,
+            )
+            # Rename back to camelCase for consistency
+            rename_map = {_camel_to_snake(f): f for f in fields
+                          if _camel_to_snake(f) != f}
+            df = df.rename(columns=rename_map)
+
+        return self._normalise_rates(df)
+
+    @staticmethod
+    def _normalise_rates(df: pd.DataFrame) -> pd.DataFrame:
+        """Normalise bounceRate/engagementRate to 0-100 range."""
+        for col in ("bounceRate", "engagementRate", "bounce_rate", "engagement_rate"):
+            if col in df.columns:
+                vals = pd.to_numeric(df[col], errors="coerce").fillna(0)
+                # If max <= 1 the values are in 0-1 range → multiply by 100
+                if len(vals) > 0 and vals.max() <= 1.0:
+                    df[col] = vals * 100
+                else:
+                    df[col] = vals
+        return df
+
+    # ── GA4 data methods ──────────────────────────────────────────────────────
+
+    def get_ga4_traffic(
+        self, date_from: str, date_to: str, progress_cb=None,
+    ) -> pd.DataFrame:
+        """Traffic overview by source/medium (monthly aggregated)."""
+        fields = [
+            "date", "source", "medium", "campaign",
+            "sessions", "users", "newUsers", "bounceRate",
+            "engagementRate", "screenPageViews",
+            "averageSessionDuration", "sessionsPerUser",
+        ]
+        return self._fetch(fields, date_from, date_to,
+                           date_aggregation="month", progress_cb=progress_cb)
+
+    def get_ga4_conversions(
+        self, date_from: str, date_to: str, progress_cb=None,
+    ) -> pd.DataFrame:
+        """Conversion data by source/campaign (monthly aggregated)."""
+        fields = [
+            "date", "source", "campaign",
+            "sessions", "conversions", "transactionRevenue",
+            "users", "eventCount",
+        ]
+        return self._fetch(fields, date_from, date_to,
+                           date_aggregation="month", progress_cb=progress_cb)
+
+    def get_ga4_device(
+        self, date_from: str, date_to: str, progress_cb=None,
+    ) -> pd.DataFrame:
+        """Device category breakdown (monthly aggregated)."""
+        fields = [
+            "date", "deviceCategory",
+            "sessions", "users", "bounceRate", "engagementRate",
+            "conversions", "transactionRevenue", "screenPageViews",
+        ]
+        return self._fetch(fields, date_from, date_to,
+                           date_aggregation="month", progress_cb=progress_cb)
+
+    def get_ga4_geo(
+        self, date_from: str, date_to: str, progress_cb=None,
+    ) -> pd.DataFrame:
+        """Geography breakdown (monthly aggregated)."""
+        fields = [
+            "date", "country", "region",
+            "sessions", "users", "conversions",
+            "transactionRevenue", "bounceRate",
+        ]
+        return self._fetch(fields, date_from, date_to,
+                           date_aggregation="month", progress_cb=progress_cb)
+
+    def get_ga4_pages(
+        self, date_from: str, date_to: str, progress_cb=None,
+    ) -> pd.DataFrame:
+        """Top pages performance (monthly aggregated)."""
+        fields = [
+            "date", "pagePath",
+            "screenPageViews", "sessions", "users",
+            "bounceRate", "engagementRate", "averageSessionDuration",
+        ]
+        return self._fetch(fields, date_from, date_to,
+                           date_aggregation="month", progress_cb=progress_cb)
+
+    def get_ga4_daily(
+        self, date_from: str, date_to: str, progress_cb=None,
+    ) -> pd.DataFrame:
+        """Daily trend data by source."""
+        fields = [
+            "date", "source",
+            "sessions", "users", "conversions",
+            "transactionRevenue", "bounceRate", "engagementRate",
+        ]
+        return self._fetch(fields, date_from, date_to,
                            progress_cb=progress_cb)

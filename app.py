@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import date, timedelta
 
 import pandas as pd
@@ -7,7 +8,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
 
-from windsor_api import WindsorClient
+from windsor_api import WindsorClient, GA4Client
 
 load_dotenv()
 
@@ -111,6 +112,8 @@ st.markdown("""
         border-radius:8px;font-size:1.05rem;font-weight:700;margin:24px 0 14px;text-align:center}
     .sh-red{background:linear-gradient(135deg,#C62828,#EF5350);color:#fff;padding:10px 20px;
         border-radius:8px;font-size:1.05rem;font-weight:700;margin:24px 0 14px;text-align:center}
+    .sh-teal{background:linear-gradient(135deg,#00695C,#26A69A);color:#fff;padding:10px 20px;
+        border-radius:8px;font-size:1.05rem;font-weight:700;margin:24px 0 14px;text-align:center}
     .main-title{background:#1E1E2E;border:1px solid #333;border-radius:8px;
         padding:14px 20px;text-align:center;margin-bottom:20px}
     .main-title h1{font-size:1.45rem;font-weight:700;color:#FAFAFA;margin:0}
@@ -134,61 +137,47 @@ st.markdown(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SIDEBAR — FILTERS
+#  SIDEBAR — SEARCH FORM (batched — no reload until "Buscar" is clicked)
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
-    st.header("Configurações")
-    api_key = st.text_input(
-        "Windsor.ai API Key",
-        value=os.getenv("WINDSOR_API_KEY", ""),
-        type="password",
-    )
-    date_from = st.date_input("Data inicial", value=date.today() - timedelta(days=30))
-    date_to = st.date_input("Data final", value=date.today())
+    with st.form("search_form"):
+        st.header("Configurações")
+        api_key = st.text_input(
+            "Windsor.ai API Key",
+            value=os.getenv("WINDSOR_API_KEY", ""),
+            type="password",
+        )
+        date_from = st.date_input("Data inicial", value=date.today() - timedelta(days=30))
+        date_to = st.date_input("Data final", value=date.today())
+
+        cached_accounts = st.session_state.get("_accounts", [])
+        sel_account = st.selectbox("Conta de Anúncios", ["Todas as contas"] + cached_accounts)
+
+        fetch = st.form_submit_button("🔍 Buscar dados", use_container_width=True)
 
 if not api_key:
     st.info("Insira sua API Key na barra lateral para começar.")
     st.stop()
 
+acct = None if sel_account == "Todas as contas" else sel_account
 
-@st.cache_data(ttl=600, show_spinner="Carregando contas…")
+
+@st.cache_data(ttl=600, show_spinner=False)
 def load_accounts(key, dfrom, dto):
     return WindsorClient(key).get_accounts(dfrom, dto, progress_cb=None)
 
 
-try:
-    accounts = load_accounts(api_key, str(date_from), str(date_to))
-except Exception as exc:
-    st.error(f"Erro ao buscar contas: {exc}")
-    st.stop()
-
-with st.sidebar:
-    sel_account = st.selectbox("Conta de Anúncios", ["Todas as contas"] + accounts)
-    st.markdown("---")
-    obj_mode = st.radio(
-        "Tipo de Campanha",
-        ["Todas", "Conversão (Vendas)", "Topo de Funil (Alcance/Engajamento)"],
-        help="Filtra campanhas pelo objetivo e adapta métricas.",
-    )
-    st.markdown("---")
-    fetch = st.button("🔄 Atualizar dados", use_container_width=True)
-
-acct = None if sel_account == "Todas as contas" else sel_account
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DATA LOADING  — core data uses monthly aggregation (fast single requests)
-#  Secondary tabs (demo/placement/region) load lazily on demand.
+#  DATA LOADING — only triggered by "Buscar dados" button
 # ═══════════════════════════════════════════════════════════════════════════════
-_cache_key = f"{api_key}|{date_from}|{date_to}|{acct}"
-need_load = fetch or st.session_state.get("_cache_key") != _cache_key
-
-if need_load:
+if fetch:
     try:
         c = WindsorClient(api_key)
         dfrom, dto = str(date_from), str(date_to)
 
-        progress = st.progress(0, text="Carregando dados principais…")
+        progress = st.progress(0, text="Carregando contas…")
+        accounts = load_accounts(api_key, dfrom, dto)
+        st.session_state["_accounts"] = accounts
 
         progress.progress(0.15, text="Carregando campanhas (agregado mensal)…")
         camp = c.get_campaign_data(dfrom, dto, acct)
@@ -204,18 +193,29 @@ if need_load:
 
         st.session_state.update(
             camp=camp, adset=adset, ad=ad,
-            _cache_key=_cache_key,
+            _data_loaded=True,
             # Clear lazy caches so they reload on next access
             _demo=None, _placement=None, _region=None,
             _daily_camp=None, _daily_ad=None,
+            # Clear GA4 lazy caches
+            _ga4_traffic=None, _ga4_conv=None, _ga4_device=None,
+            _ga4_geo=None, _ga4_pages=None, _ga4_daily=None,
         )
     except Exception as exc:
         st.error(f"Erro ao buscar dados: {exc}")
         st.stop()
 
-if "_cache_key" not in st.session_state:
-    st.info("Clique em 'Atualizar dados' para carregar.")
+if "camp" not in st.session_state:
+    st.info("Configure os filtros e clique em **🔍 Buscar dados** para carregar.")
     st.stop()
+
+with st.sidebar:
+    st.markdown("---")
+    obj_mode = st.radio(
+        "Tipo de Campanha",
+        ["Todas", "Conversão (Vendas)", "Topo de Funil (Alcance/Engajamento)"],
+        help="Filtra campanhas pelo objetivo e adapta métricas.",
+    )
 
 
 def _lazy(key, loader):
@@ -419,12 +419,14 @@ is_tofu = obj_mode == "Topo de Funil (Alcance/Engajamento)"
 # ═══════════════════════════════════════════════════════════════════════════════
 #  TABS
 # ═══════════════════════════════════════════════════════════════════════════════
-tab_overview, tab_funnel, tab_creative, tab_audience, tab_diagnostic = st.tabs([
+tab_overview, tab_funnel, tab_creative, tab_audience, tab_diagnostic, tab_ga4, tab_cross = st.tabs([
     "📊 Visão Geral",
     "🔻 Funil de Conversão",
     "🎨 Criativos",
     "👥 Audiência & Placement",
     "🩺 Diagnóstico & Otimização",
+    "📈 Google Analytics",
+    "🔗 Meta + GA4",
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1220,3 +1222,629 @@ with tab_diagnostic:
                               margin=dict(l=10, r=10, t=30, b=10),
                               title="ROAS Diário (MA7)", yaxis=dict(title="ROAS"))
             st.plotly_chart(fig, width="stretch")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GA4 LAZY LOADERS
+# ═══════════════════════════════════════════════════════════════════════════════
+_ga4 = GA4Client(api_key)
+
+
+def _get_ga4_traffic():
+    return _lazy("_ga4_traffic", lambda: _ga4.get_ga4_traffic(_dfrom, _dto))
+
+
+def _get_ga4_conv():
+    return _lazy("_ga4_conv", lambda: _ga4.get_ga4_conversions(_dfrom, _dto))
+
+
+def _get_ga4_device():
+    return _lazy("_ga4_device", lambda: _ga4.get_ga4_device(_dfrom, _dto))
+
+
+def _get_ga4_geo():
+    return _lazy("_ga4_geo", lambda: _ga4.get_ga4_geo(_dfrom, _dto))
+
+
+def _get_ga4_pages():
+    return _lazy("_ga4_pages", lambda: _ga4.get_ga4_pages(_dfrom, _dto))
+
+
+def _get_ga4_daily():
+    return _lazy("_ga4_daily", lambda: _ga4.get_ga4_daily(_dfrom, _dto))
+
+
+def _ga4_col(df, col):
+    """Safely get a GA4 column, trying camelCase then snake_case."""
+    if col in df.columns:
+        return df[col]
+    snake = re.sub(r"(?<=[a-z0-9])([A-Z])", r"_\1", col).lower()
+    if snake in df.columns:
+        return df[snake]
+    return pd.Series(0, index=df.index)
+
+
+def _ga4_col_sum(df, col):
+    return _ga4_col(df, col).sum()
+
+
+def _ga4_weighted_mean(df, metric_col, weight_col="sessions"):
+    """Weighted average (rates weighted by sessions)."""
+    m = _ga4_col(df, metric_col)
+    w = _ga4_col(df, weight_col)
+    total_w = w.sum()
+    if total_w == 0:
+        return 0
+    return (m * w).sum() / total_w
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  TAB 6 — GOOGLE ANALYTICS 4
+# ─────────────────────────────────────────────────────────────────────────────
+with tab_ga4:
+
+    ga4_traffic = _get_ga4_traffic()
+
+    if ga4_traffic.empty:
+        st.warning("Sem dados do Google Analytics 4. Verifique se o GA4 está conectado no Windsor.ai.")
+    else:
+        # ── 6A. KPIs de Tráfego ──────────────────────────────────────────
+        st.markdown(H("KPIs de Tráfego — Google Analytics 4", "sh-teal"), unsafe_allow_html=True)
+        ga4_sessions = _ga4_col_sum(ga4_traffic, "sessions")
+        ga4_users = _ga4_col_sum(ga4_traffic, "users")
+        ga4_new_users = _ga4_col_sum(ga4_traffic, "newUsers")
+        ga4_pvs = _ga4_col_sum(ga4_traffic, "screenPageViews")
+        ga4_bounce = _ga4_weighted_mean(ga4_traffic, "bounceRate")
+        ga4_engage = _ga4_weighted_mean(ga4_traffic, "engagementRate")
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1.metric("Sessões", fmt_int(ga4_sessions))
+        c2.metric("Usuários", fmt_int(ga4_users))
+        c3.metric("Novos Usuários", fmt_int(ga4_new_users))
+        c4.metric("Pageviews", fmt_int(ga4_pvs))
+        c5.metric("Bounce Rate", fmt_pct(ga4_bounce))
+        c6.metric("Engagement Rate", fmt_pct(ga4_engage))
+
+        # ── 6B. Tendência Diária ─────────────────────────────────────────
+        st.markdown(H("Tendência Diária — Sessões & Engagement Rate", "sh-teal"), unsafe_allow_html=True)
+        ga4_daily = _get_ga4_daily()
+        if not ga4_daily.empty and "date" in ga4_daily.columns:
+            gd = ga4_daily.copy()
+            gd["_sessions"] = _ga4_col(gd, "sessions")
+            gd["_engage"] = _ga4_col(gd, "engagementRate")
+            gd_agg = (
+                gd.groupby("date", as_index=False)
+                .agg(_sessions=("_sessions", "sum"), _engage_w=("_engage", "sum"),
+                     _w=("_sessions", "sum"))
+            )
+            gd_agg["engagement"] = gd_agg.apply(
+                lambda r: safe_div(r["_engage_w"], r["_w"]) if r["_w"] else 0, axis=1
+            )
+            gd_agg = gd_agg.sort_values("date")
+            gd_agg["sessions_ma7"] = gd_agg["_sessions"].rolling(7, min_periods=1).mean()
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=gd_agg["date"], y=gd_agg["_sessions"], name="Sessões",
+                line=dict(color="#26A69A", width=1), opacity=0.4,
+            ))
+            fig.add_trace(go.Scatter(
+                x=gd_agg["date"], y=gd_agg["sessions_ma7"], name="Sessões MA7",
+                line=dict(color="#26A69A", width=3),
+            ))
+            fig.add_trace(go.Scatter(
+                x=gd_agg["date"], y=gd_agg["engagement"], name="Engagement Rate %",
+                yaxis="y2", line=dict(color="#42A5F5", width=3),
+            ))
+            fig.update_layout(
+                **PLOTLY_TRANSPARENT, height=350,
+                margin=dict(l=10, r=10, t=10, b=10),
+                yaxis=dict(title="Sessões", showgrid=True, gridcolor="#333"),
+                yaxis2=dict(title="Engagement Rate (%)", overlaying="y", side="right", showgrid=False),
+                xaxis=dict(showgrid=False),
+                legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Dados diários GA4 não disponíveis.")
+
+        # ── 6C. Tráfego por Source/Medium ────────────────────────────────
+        st.markdown(H("Tráfego por Source / Medium", "sh-teal"), unsafe_allow_html=True)
+        gt = ga4_traffic.copy()
+        gt["_sessions"] = _ga4_col(gt, "sessions")
+        gt["_users"] = _ga4_col(gt, "users")
+        gt["_pvs"] = _ga4_col(gt, "screenPageViews")
+        gt["_bounce"] = _ga4_col(gt, "bounceRate")
+        gt["_engage"] = _ga4_col(gt, "engagementRate")
+
+        has_medium = "medium" in gt.columns
+        group_cols = ["source", "medium"] if has_medium else ["source"]
+        src_agg = gt.groupby(group_cols, as_index=False).agg(
+            sessions=("_sessions", "sum"),
+            users=("_users", "sum"),
+            pageviews=("_pvs", "sum"),
+            _bounce_w=("_bounce", lambda x: (x * gt.loc[x.index, "_sessions"]).sum()),
+            _engage_w=("_engage", lambda x: (x * gt.loc[x.index, "_sessions"]).sum()),
+        )
+        src_agg["Bounce Rate"] = src_agg.apply(lambda r: safe_div(r["_bounce_w"], r["sessions"]), axis=1)
+        src_agg["Engagement Rate"] = src_agg.apply(lambda r: safe_div(r["_engage_w"], r["sessions"]), axis=1)
+        src_agg = src_agg.sort_values("sessions", ascending=False)
+
+        col_bar, col_tbl = st.columns([2, 3])
+        with col_bar:
+            top10_src = src_agg.head(10)
+            fig = go.Figure(go.Bar(
+                y=top10_src["source"], x=top10_src["sessions"],
+                orientation="h", marker_color="#26A69A",
+                text=top10_src["sessions"].apply(fmt_int), textposition="auto",
+            ))
+            fig.update_layout(
+                **PLOTLY_TRANSPARENT, height=400,
+                margin=dict(l=10, r=10, t=10, b=10),
+                yaxis=dict(autorange="reversed"),
+                xaxis=dict(title="Sessões"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col_tbl:
+            src_show = src_agg.drop(columns=["_bounce_w", "_engage_w"], errors="ignore").copy()
+            src_show = src_show.rename(columns={
+                "source": "Source", "medium": "Medium",
+                "sessions": "Sessões", "users": "Usuários", "pageviews": "Pageviews",
+            })
+            for c in ["Sessões", "Usuários", "Pageviews"]:
+                if c in src_show.columns:
+                    src_show[c] = src_show[c].apply(fmt_int)
+            for c in ["Bounce Rate", "Engagement Rate"]:
+                if c in src_show.columns:
+                    src_show[c] = src_show[c].apply(fmt_pct)
+            st.dataframe(src_show, use_container_width=True, hide_index=True, height=400)
+
+        # ── 6D. Dispositivos ─────────────────────────────────────────────
+        st.markdown(H("Sessões por Dispositivo", "sh-teal"), unsafe_allow_html=True)
+        ga4_dev = _get_ga4_device()
+        if not ga4_dev.empty:
+            gdev = ga4_dev.copy()
+            dev_col = "deviceCategory" if "deviceCategory" in gdev.columns else "device_category"
+            if dev_col in gdev.columns:
+                gdev["_sessions"] = _ga4_col(gdev, "sessions")
+                gdev["_users"] = _ga4_col(gdev, "users")
+                gdev["_bounce"] = _ga4_col(gdev, "bounceRate")
+                gdev["_conv"] = _ga4_col(gdev, "conversions")
+                gdev["_rev"] = _ga4_col(gdev, "transactionRevenue")
+
+                dev_agg = gdev.groupby(dev_col, as_index=False).agg(
+                    sessions=("_sessions", "sum"),
+                    users=("_users", "sum"),
+                    bounceRate=("_bounce", "mean"),
+                    conversions=("_conv", "sum"),
+                    revenue=("_rev", "sum"),
+                )
+
+                col_donut, col_dev_tbl = st.columns([2, 3])
+                with col_donut:
+                    fig = px.pie(dev_agg, values="sessions", names=dev_col, hole=0.4,
+                                 color_discrete_sequence=["#26A69A", "#42A5F5", "#FF8C00", "#AB47BC"])
+                    fig.update_layout(**PLOTLY_TRANSPARENT, height=350,
+                                      margin=dict(l=10, r=10, t=10, b=10))
+                    fig.update_traces(textposition="inside", textinfo="percent+label")
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col_dev_tbl:
+                    dev_show = dev_agg.rename(columns={
+                        dev_col: "Dispositivo", "sessions": "Sessões", "users": "Usuários",
+                        "bounceRate": "Bounce Rate", "conversions": "Conversões", "revenue": "Receita",
+                    })
+                    for c in ["Sessões", "Usuários", "Conversões"]:
+                        if c in dev_show.columns:
+                            dev_show[c] = dev_show[c].apply(fmt_int)
+                    if "Receita" in dev_show.columns:
+                        dev_show["Receita"] = dev_show["Receita"].apply(brl)
+                    if "Bounce Rate" in dev_show.columns:
+                        dev_show["Bounce Rate"] = dev_show["Bounce Rate"].apply(fmt_pct)
+                    st.dataframe(dev_show, use_container_width=True, hide_index=True)
+            else:
+                st.info("Dados de dispositivo não disponíveis.")
+        else:
+            st.info("Dados de dispositivo não disponíveis.")
+
+        # ── 6E. Top Páginas ──────────────────────────────────────────────
+        st.markdown(H("Top Páginas por Pageviews", "sh-teal"), unsafe_allow_html=True)
+        ga4_pg = _get_ga4_pages()
+        if not ga4_pg.empty:
+            gpg = ga4_pg.copy()
+            pg_col = "pagePath" if "pagePath" in gpg.columns else "page_path"
+            if pg_col in gpg.columns:
+                gpg["_pvs"] = _ga4_col(gpg, "screenPageViews")
+                gpg["_sessions"] = _ga4_col(gpg, "sessions")
+                gpg["_bounce"] = _ga4_col(gpg, "bounceRate")
+                gpg["_engage"] = _ga4_col(gpg, "engagementRate")
+
+                pg_agg = gpg.groupby(pg_col, as_index=False).agg(
+                    pageviews=("_pvs", "sum"),
+                    sessions=("_sessions", "sum"),
+                    bounceRate=("_bounce", "mean"),
+                    engagementRate=("_engage", "mean"),
+                ).sort_values("pageviews", ascending=False)
+
+                col_pgbar, col_pgtbl = st.columns([2, 3])
+                with col_pgbar:
+                    top15 = pg_agg.head(15)
+                    fig = go.Figure(go.Bar(
+                        y=top15[pg_col], x=top15["pageviews"],
+                        orientation="h", marker_color="#26A69A",
+                        text=top15["pageviews"].apply(fmt_int), textposition="auto",
+                    ))
+                    fig.update_layout(
+                        **PLOTLY_TRANSPARENT, height=500,
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        yaxis=dict(autorange="reversed"),
+                        xaxis=dict(title="Pageviews"),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col_pgtbl:
+                    pg_show = pg_agg.rename(columns={
+                        pg_col: "Página", "pageviews": "Pageviews",
+                        "sessions": "Sessões", "bounceRate": "Bounce Rate",
+                        "engagementRate": "Engagement Rate",
+                    })
+                    for c in ["Pageviews", "Sessões"]:
+                        if c in pg_show.columns:
+                            pg_show[c] = pg_show[c].apply(fmt_int)
+                    for c in ["Bounce Rate", "Engagement Rate"]:
+                        if c in pg_show.columns:
+                            pg_show[c] = pg_show[c].apply(fmt_pct)
+                    st.dataframe(pg_show, use_container_width=True, hide_index=True, height=500)
+            else:
+                st.info("Dados de páginas não disponíveis.")
+        else:
+            st.info("Dados de páginas não disponíveis.")
+
+        # ── 6F. Geografia ────────────────────────────────────────────────
+        st.markdown(H("Tráfego por País / Região", "sh-teal"), unsafe_allow_html=True)
+        ga4_geo = _get_ga4_geo()
+        if not ga4_geo.empty:
+            gg = ga4_geo.copy()
+            if "country" in gg.columns:
+                gg["_sessions"] = _ga4_col(gg, "sessions")
+                gg["_users"] = _ga4_col(gg, "users")
+                gg["_conv"] = _ga4_col(gg, "conversions")
+                gg["_rev"] = _ga4_col(gg, "transactionRevenue")
+                gg["_bounce"] = _ga4_col(gg, "bounceRate")
+
+                geo_grp = ["country"]
+                if "region" in gg.columns:
+                    geo_grp.append("region")
+
+                geo_agg = gg.groupby(geo_grp, as_index=False).agg(
+                    sessions=("_sessions", "sum"),
+                    users=("_users", "sum"),
+                    conversions=("_conv", "sum"),
+                    revenue=("_rev", "sum"),
+                    bounceRate=("_bounce", "mean"),
+                ).sort_values("sessions", ascending=False)
+
+                col_geobar, col_geotbl = st.columns([2, 3])
+                with col_geobar:
+                    country_agg = geo_agg.groupby("country", as_index=False).agg(
+                        sessions=("sessions", "sum")).sort_values("sessions", ascending=False).head(10)
+                    fig = go.Figure(go.Bar(
+                        y=country_agg["country"], x=country_agg["sessions"],
+                        orientation="h", marker_color="#26A69A",
+                        text=country_agg["sessions"].apply(fmt_int), textposition="auto",
+                    ))
+                    fig.update_layout(
+                        **PLOTLY_TRANSPARENT, height=400,
+                        margin=dict(l=10, r=10, t=10, b=10),
+                        yaxis=dict(autorange="reversed"),
+                        xaxis=dict(title="Sessões"),
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                with col_geotbl:
+                    geo_show = geo_agg.rename(columns={
+                        "country": "País", "region": "Região",
+                        "sessions": "Sessões", "users": "Usuários",
+                        "conversions": "Conversões", "revenue": "Receita",
+                        "bounceRate": "Bounce Rate",
+                    })
+                    for c in ["Sessões", "Usuários", "Conversões"]:
+                        if c in geo_show.columns:
+                            geo_show[c] = geo_show[c].apply(fmt_int)
+                    if "Receita" in geo_show.columns:
+                        geo_show["Receita"] = geo_show["Receita"].apply(brl)
+                    if "Bounce Rate" in geo_show.columns:
+                        geo_show["Bounce Rate"] = geo_show["Bounce Rate"].apply(fmt_pct)
+                    st.dataframe(geo_show, use_container_width=True, hide_index=True, height=400)
+            else:
+                st.info("Dados geográficos GA4 não disponíveis.")
+        else:
+            st.info("Dados geográficos GA4 não disponíveis.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  TAB 7 — META + GA4 FUNIL PAGO
+# ─────────────────────────────────────────────────────────────────────────────
+def _is_paid_traffic(df):
+    """Filter GA4 data for paid Meta/Facebook/Instagram traffic."""
+    if df.empty:
+        return df
+    mask = pd.Series(False, index=df.index)
+    if "source" in df.columns:
+        src = df["source"].astype(str).str.lower()
+        mask = mask | src.isin(["facebook", "fb", "meta", "instagram", "ig"])
+    if "medium" in df.columns:
+        med = df["medium"].astype(str).str.lower()
+        mask = mask | med.str.contains("cpc|paid|cpm", na=False, regex=True)
+    return df[mask]
+
+
+def _normalise_campaign_name(name):
+    """Normalise campaign name for fuzzy matching."""
+    if pd.isna(name):
+        return ""
+    return re.sub(r"[^a-z0-9]", "", str(name).lower().strip())
+
+
+with tab_cross:
+
+    ga4_traffic_cross = _get_ga4_traffic()
+    ga4_conv_cross = _get_ga4_conv()
+    ga4_daily_cross = _get_ga4_daily()
+
+    if ga4_traffic_cross.empty:
+        st.warning("Sem dados GA4 para cruzamento. Verifique se o GA4 está conectado no Windsor.ai.")
+    else:
+        # Filter GA4 for paid Meta traffic
+        ga4_paid = _is_paid_traffic(ga4_traffic_cross)
+        ga4_conv_paid = _is_paid_traffic(ga4_conv_cross) if not ga4_conv_cross.empty else ga4_conv_cross
+        ga4_daily_paid = _is_paid_traffic(ga4_daily_cross) if not ga4_daily_cross.empty else ga4_daily_cross
+
+        paid_sessions = _ga4_col_sum(ga4_paid, "sessions") if not ga4_paid.empty else 0
+        paid_conv = _ga4_col_sum(ga4_conv_paid, "conversions") if not ga4_conv_paid.empty else 0
+        paid_rev = _ga4_col_sum(ga4_conv_paid, "transactionRevenue") if not ga4_conv_paid.empty else 0
+
+        # ── 7A. Funil Completo Pago ──────────────────────────────────────
+        st.markdown(H("Funil Completo — Meta Ads → Google Analytics 4", "sh-teal"), unsafe_allow_html=True)
+
+        funnel_cross = [
+            ("Impressões (Meta)", total_imp),
+            ("Cliques (Meta)", total_clicks),
+            ("Sessões (GA4)", paid_sessions),
+            ("Conversões (GA4)", paid_conv),
+            ("Receita (GA4)", paid_rev),
+        ]
+        funnel_labels_c = [f[0] for f in funnel_cross]
+        funnel_values_c = [f[1] for f in funnel_cross]
+
+        col_funnel, col_rates_c = st.columns([3, 2])
+        with col_funnel:
+            colors_c = ["#FF8C00", "#FF6B00", "#26A69A", "#00897B", "#004D40"]
+            fig = go.Figure(go.Funnel(
+                y=funnel_labels_c, x=funnel_values_c,
+                textinfo="value+label",
+                texttemplate="<b>%{label}</b><br>%{value:,.0f}",
+                marker=dict(color=colors_c, line=dict(width=0)),
+                connector=dict(line=dict(color="#1E1E2E", width=0)),
+            ))
+            fig.update_layout(**PLOTLY_TRANSPARENT, height=400,
+                              margin=dict(l=20, r=20, t=10, b=10), showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+        with col_rates_c:
+            st.markdown(H("Taxas entre Etapas", "sh-teal"), unsafe_allow_html=True)
+            for i in range(1, len(funnel_cross)):
+                prev_label, prev_val = funnel_cross[i - 1]
+                curr_label, curr_val = funnel_cross[i]
+                rate = safe_div(curr_val, prev_val, 100)
+                st.metric(
+                    f"{prev_label} → {curr_label}",
+                    f"{rate:.1f}%",
+                    delta=f"-{100 - rate:.1f}% drop" if rate < 100 else "0%",
+                    delta_color="inverse",
+                )
+
+        # ── 7B. KPIs Cruzadas ────────────────────────────────────────────
+        st.markdown(H("KPIs Cruzadas — Meta Ads + GA4", "sh-teal"), unsafe_allow_html=True)
+        cost_per_session = safe_div(total_spend, paid_sessions)
+        cpa_ga4 = safe_div(total_spend, paid_conv)
+        roas_ga4 = safe_div(paid_rev, total_spend)
+
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+        c1.metric("Investimento Meta", brl(total_spend))
+        c2.metric("Sessões GA4 (paid)", fmt_int(paid_sessions))
+        c3.metric("Custo/Sessão", brl(cost_per_session))
+        c4.metric("Conversões GA4", fmt_int(paid_conv))
+        c5.metric("CPA (GA4)", brl(cpa_ga4))
+        c6.metric("ROAS (GA4)", fmt_dec(roas_ga4, suffix="x"))
+
+        # ── 7C. Comparativo por Campanha ─────────────────────────────────
+        st.markdown(H("Comparativo por Campanha — Meta vs GA4", "sh-teal"), unsafe_allow_html=True)
+
+        # Build Meta campaign summary
+        meta_camp = df_camp.groupby("campaign", as_index=False).agg(
+            spend=("spend", "sum"), clicks=("clicks", "sum"),
+            conv_meta=("actions_purchase", "sum"),
+            rev_meta=("action_values_purchase", "sum"),
+        )
+        if "campaign_id" in df_camp.columns:
+            meta_camp["campaign_id"] = df_camp.groupby("campaign")["campaign_id"].first().values
+
+        meta_camp["roas_meta"] = meta_camp.apply(lambda r: safe_div(r["rev_meta"], r["spend"]), axis=1)
+        meta_camp["_norm"] = meta_camp["campaign"].apply(_normalise_campaign_name)
+
+        # Build GA4 paid campaign summary
+        if not ga4_paid.empty and "campaign" in ga4_paid.columns:
+            ga4_camp = ga4_paid.copy()
+            ga4_camp["_sessions"] = _ga4_col(ga4_camp, "sessions")
+
+            ga4_camp_agg = ga4_camp.groupby("campaign", as_index=False).agg(
+                sessions_ga4=("_sessions", "sum"),
+            )
+
+            # Add conversions if available
+            if not ga4_conv_paid.empty and "campaign" in ga4_conv_paid.columns:
+                gc_paid = ga4_conv_paid.copy()
+                gc_paid["_conv"] = _ga4_col(gc_paid, "conversions")
+                gc_paid["_rev"] = _ga4_col(gc_paid, "transactionRevenue")
+                gc_agg = gc_paid.groupby("campaign", as_index=False).agg(
+                    conv_ga4=("_conv", "sum"),
+                    rev_ga4=("_rev", "sum"),
+                )
+                ga4_camp_agg = ga4_camp_agg.merge(gc_agg, on="campaign", how="left")
+            else:
+                ga4_camp_agg["conv_ga4"] = 0
+                ga4_camp_agg["rev_ga4"] = 0
+
+            ga4_camp_agg = ga4_camp_agg.fillna(0)
+            ga4_camp_agg["_norm"] = ga4_camp_agg["campaign"].apply(_normalise_campaign_name)
+
+            # Match campaigns: 3 strategies
+            merged_rows = []
+            ga4_matched = set()
+
+            for _, mr in meta_camp.iterrows():
+                match_type = "sem match"
+                ga4_row = None
+
+                # 1. Exact match
+                exact = ga4_camp_agg[ga4_camp_agg["campaign"] == mr["campaign"]]
+                if not exact.empty:
+                    ga4_row = exact.iloc[0]
+                    match_type = "exato"
+                else:
+                    # 2. Normalised match
+                    norm = ga4_camp_agg[ga4_camp_agg["_norm"] == mr["_norm"]]
+                    if not norm.empty and mr["_norm"]:
+                        ga4_row = norm.iloc[0]
+                        match_type = "fuzzy"
+                    elif "campaign_id" in mr.index and pd.notna(mr.get("campaign_id")):
+                        # 3. Campaign ID match
+                        cid = str(mr["campaign_id"])
+                        id_match = ga4_camp_agg[ga4_camp_agg["campaign"].astype(str).str.contains(cid, na=False)]
+                        if not id_match.empty:
+                            ga4_row = id_match.iloc[0]
+                            match_type = "id"
+
+                row_data = {
+                    "Campanha": mr["campaign"],
+                    "Spend": mr["spend"],
+                    "Cliques (Meta)": mr["clicks"],
+                    "Sessões (GA4)": ga4_row["sessions_ga4"] if ga4_row is not None else 0,
+                    "Conv Meta": mr["conv_meta"],
+                    "Conv GA4": ga4_row["conv_ga4"] if ga4_row is not None else 0,
+                    "Receita Meta": mr["rev_meta"],
+                    "Receita GA4": ga4_row["rev_ga4"] if ga4_row is not None else 0,
+                    "ROAS Meta": mr["roas_meta"],
+                    "ROAS GA4": safe_div(ga4_row["rev_ga4"], mr["spend"]) if ga4_row is not None else 0,
+                    "Match": match_type,
+                }
+                merged_rows.append(row_data)
+                if ga4_row is not None:
+                    ga4_matched.add(ga4_row["campaign"])
+
+            merged_df = pd.DataFrame(merged_rows)
+
+            if not merged_df.empty:
+                # Format display
+                display_merged = merged_df.copy()
+                for c in ["Cliques (Meta)", "Sessões (GA4)", "Conv Meta", "Conv GA4"]:
+                    display_merged[c] = display_merged[c].apply(fmt_int)
+                for c in ["Spend", "Receita Meta", "Receita GA4"]:
+                    display_merged[c] = display_merged[c].apply(brl)
+                for c in ["ROAS Meta", "ROAS GA4"]:
+                    display_merged[c] = display_merged[c].apply(lambda v: fmt_dec(v, suffix="x"))
+
+                # Color-code match quality
+                def _match_color(val):
+                    colors = {"exato": "background-color: #1B5E20", "fuzzy": "background-color: #E65100",
+                              "id": "background-color: #01579B", "sem match": "background-color: #B71C1C"}
+                    return colors.get(val, "")
+
+                st.dataframe(
+                    display_merged.style.applymap(_match_color, subset=["Match"]),
+                    use_container_width=True, hide_index=True,
+                )
+
+                # Unmatched GA4 campaigns
+                unmatched_ga4 = ga4_camp_agg[~ga4_camp_agg["campaign"].isin(ga4_matched)]
+                if not unmatched_ga4.empty:
+                    with st.expander(f"Campanhas GA4 não mapeadas ({len(unmatched_ga4)})"):
+                        unm_show = unmatched_ga4[["campaign", "sessions_ga4", "conv_ga4", "rev_ga4"]].rename(columns={
+                            "campaign": "Campanha GA4", "sessions_ga4": "Sessões",
+                            "conv_ga4": "Conversões", "rev_ga4": "Receita",
+                        })
+                        for c in ["Sessões", "Conversões"]:
+                            unm_show[c] = unm_show[c].apply(fmt_int)
+                        unm_show["Receita"] = unm_show["Receita"].apply(brl)
+                        st.dataframe(unm_show, use_container_width=True, hide_index=True)
+            else:
+                st.info("Sem campanhas para comparar.")
+        else:
+            st.info("Sem dados de campanhas GA4 para tráfego pago.")
+
+        # ── 7D. Scatter ROAS Meta vs ROAS GA4 ───────────────────────────
+        st.markdown(H("ROAS Meta vs ROAS GA4 por Campanha", "sh-teal"), unsafe_allow_html=True)
+        if "merged_df" in dir() and not merged_df.empty:
+            scatter_cross = merged_df[
+                (merged_df["ROAS Meta"] > 0) & (merged_df["ROAS GA4"] > 0)
+            ].copy()
+            if not scatter_cross.empty:
+                fig = px.scatter(
+                    scatter_cross, x="ROAS Meta", y="ROAS GA4",
+                    size="Spend", hover_name="Campanha",
+                    color="Match",
+                    color_discrete_map={"exato": "#66BB6A", "fuzzy": "#FF8C00", "id": "#42A5F5", "sem match": "#EF5350"},
+                )
+                # Diagonal y=x reference line
+                max_val = max(scatter_cross["ROAS Meta"].max(), scatter_cross["ROAS GA4"].max()) * 1.1
+                fig.add_trace(go.Scatter(
+                    x=[0, max_val], y=[0, max_val],
+                    mode="lines", line=dict(color="#666", dash="dash", width=1),
+                    name="y = x", showlegend=True,
+                ))
+                fig.update_layout(
+                    **PLOTLY_TRANSPARENT, height=450,
+                    margin=dict(l=10, r=10, t=10, b=10),
+                    xaxis=dict(title="ROAS Meta"),
+                    yaxis=dict(title="ROAS GA4"),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Sem campanhas com ROAS positivo em ambas as plataformas.")
+        else:
+            st.info("Sem dados para scatter de ROAS.")
+
+        # ── 7E. Tendência Diária — Spend Meta vs Sessões GA4 ────────────
+        st.markdown(H("Tendência Diária — Spend Meta vs Sessões GA4 (Paid)", "sh-teal"), unsafe_allow_html=True)
+        daily_meta = _get_daily_camp()
+        if not daily_meta.empty and not ga4_daily_paid.empty:
+            dm = daily_meta.groupby("date", as_index=False).agg(spend=("spend", "sum")).sort_values("date")
+
+            gd_paid = ga4_daily_paid.copy()
+            gd_paid["_sessions"] = _ga4_col(gd_paid, "sessions")
+            gd_paid_agg = gd_paid.groupby("date", as_index=False).agg(
+                sessions=("_sessions", "sum")).sort_values("date")
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=dm["date"], y=dm["spend"], name="Spend Meta (R$)",
+                marker_color="#FF8C00", opacity=0.7,
+            ))
+            fig.add_trace(go.Scatter(
+                x=gd_paid_agg["date"], y=gd_paid_agg["sessions"],
+                name="Sessões GA4 (paid)", yaxis="y2",
+                line=dict(color="#26A69A", width=3),
+            ))
+            fig.update_layout(
+                **PLOTLY_TRANSPARENT, height=400,
+                margin=dict(l=10, r=10, t=10, b=10),
+                yaxis=dict(title="Spend Meta (R$)", showgrid=True, gridcolor="#333"),
+                yaxis2=dict(title="Sessões GA4", overlaying="y", side="right", showgrid=False),
+                xaxis=dict(showgrid=False),
+                legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Dados diários insuficientes para tendência cruzada.")
