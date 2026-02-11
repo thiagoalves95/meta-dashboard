@@ -227,6 +227,48 @@ if sel_campaign != "Todas":
     df_adset = df_adset[df_adset["campaign"] == sel_campaign] if not df_adset.empty else df_adset
     df_ad = df_ad[df_ad["campaign"] == sel_campaign] if not df_ad.empty else df_ad
 
+# ── Keyword search filter ────────────────────────────────────────────────────
+with st.sidebar:
+    keyword = st.text_input(
+        "Buscar por palavra-chave",
+        placeholder="Ex: remarketing, vídeo, promo…",
+        help="Filtra por nome de Campanha, Conjunto de Anúncios ou Criativo.",
+    )
+
+matched_campaigns = set()
+if keyword:
+    kw = keyword.strip().lower()
+
+    def _kw_match(df, cols):
+        """Return rows where any of `cols` contains the keyword (case-insensitive)."""
+        mask = pd.Series(False, index=df.index)
+        for c in cols:
+            if c in df.columns:
+                mask = mask | df[c].astype(str).str.lower().str.contains(kw, na=False)
+        return df[mask]
+
+    # Find matching campaign names across all levels
+    matched_campaigns = set()
+    for _df, _cols in [
+        (df_camp, ["campaign"]),
+        (df_adset, ["campaign", "adset_name"]),
+        (df_ad, ["campaign", "adset_name", "ad_name"]),
+    ]:
+        if not _df.empty:
+            hits = _kw_match(_df, _cols)
+            if "campaign" in hits.columns:
+                matched_campaigns.update(hits["campaign"].dropna().unique())
+
+    # Filter: keep full campaign if keyword matches at ANY level
+    if matched_campaigns:
+        df_camp = df_camp[df_camp["campaign"].isin(matched_campaigns)] if not df_camp.empty else df_camp
+        df_adset = df_adset[df_adset["campaign"].isin(matched_campaigns)] if not df_adset.empty else df_adset
+        df_ad = df_ad[df_ad["campaign"].isin(matched_campaigns)] if not df_ad.empty else df_ad
+    else:
+        df_camp = df_camp.iloc[0:0]
+        df_adset = df_adset.iloc[0:0]
+        df_ad = df_ad.iloc[0:0]
+
 if df_camp.empty:
     st.warning("Nenhum dado encontrado para os filtros selecionados.")
     st.stop()
@@ -235,44 +277,36 @@ if df_camp.empty:
 _c = WindsorClient(api_key)
 _dfrom, _dto = str(date_from), str(date_to)
 
-def _get_demo():
-    df = _lazy("_demo", lambda: _c.get_demo_data(_dfrom, _dto, acct))
+def _apply_filters(df):
+    """Apply objective, campaign, and keyword filters to a lazy-loaded df."""
     df = _classify(df)
     if obj_mode != "Todas":
         df = df[df["_cat"] == obj_mode]
     if sel_campaign != "Todas" and "campaign" in df.columns:
         df = df[df["campaign"] == sel_campaign]
+    if keyword and "campaign" in df.columns:
+        df = df[df["campaign"].isin(matched_campaigns)] if matched_campaigns else df.iloc[0:0]
     return df
+
+def _get_demo():
+    return _apply_filters(_lazy("_demo", lambda: _c.get_demo_data(_dfrom, _dto, acct)))
 
 def _get_placement():
-    df = _lazy("_placement", lambda: _c.get_placement_data(_dfrom, _dto, acct))
-    df = _classify(df)
-    if obj_mode != "Todas":
-        df = df[df["_cat"] == obj_mode]
-    if sel_campaign != "Todas" and "campaign" in df.columns:
-        df = df[df["campaign"] == sel_campaign]
-    return df
+    return _apply_filters(_lazy("_placement", lambda: _c.get_placement_data(_dfrom, _dto, acct)))
 
 def _get_region():
-    df = _lazy("_region", lambda: _c.get_region_data(_dfrom, _dto, acct))
-    df = _classify(df)
-    if obj_mode != "Todas":
-        df = df[df["_cat"] == obj_mode]
-    if sel_campaign != "Todas" and "campaign" in df.columns:
-        df = df[df["campaign"] == sel_campaign]
-    return df
+    return _apply_filters(_lazy("_region", lambda: _c.get_region_data(_dfrom, _dto, acct)))
 
 def _get_daily_camp():
-    df = _lazy("_daily_camp", lambda: _c.get_campaign_daily(_dfrom, _dto, acct))
-    df = _classify(df)
-    if obj_mode != "Todas":
-        df = df[df["_cat"] == obj_mode]
-    if sel_campaign != "Todas" and "campaign" in df.columns:
-        df = df[df["campaign"] == sel_campaign]
-    return df
+    return _apply_filters(_lazy("_daily_camp", lambda: _c.get_campaign_daily(_dfrom, _dto, acct)))
 
 def _get_daily_ad():
-    return _lazy("_daily_ad", lambda: _c.get_ad_daily(_dfrom, _dto, acct))
+    df = _lazy("_daily_ad", lambda: _c.get_ad_daily(_dfrom, _dto, acct))
+    if keyword and "ad_name" in df.columns and matched_campaigns:
+        # For daily ad, filter by ad names that belong to matched campaigns
+        matched_ads = df_ad["ad_name"].unique() if not df_ad.empty else []
+        df = df[df["ad_name"].isin(matched_ads)] if len(matched_ads) > 0 else df
+    return df
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
