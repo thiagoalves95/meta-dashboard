@@ -503,7 +503,7 @@ with tab_overview:
             xaxis=dict(showgrid=False),
             legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.info("Dados diários não disponíveis para o período.")
 
@@ -535,7 +535,7 @@ with tab_overview:
         ov["CTR"] = ov["CTR"].apply(fmt_pct)
     if "ROAS" in ov.columns:
         ov["ROAS"] = ov["ROAS"].apply(lambda v: fmt_dec(v, suffix="x"))
-    st.dataframe(ov, use_container_width=True, hide_index=True)
+    st.dataframe(ov, width="stretch", hide_index=True)
 
     # ── Pie meses + Desempenho mensal (uses monthly-aggregated camp data) ─
     col_pie, col_monthly = st.columns([2, 3])
@@ -551,7 +551,7 @@ with tab_overview:
             fig = px.pie(top, values="spend", names="label", hole=0.35, color_discrete_sequence=px.colors.qualitative.Dark24)
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10))
             fig.update_traces(textposition="inside", textinfo="percent")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
     with col_monthly:
         st.markdown(H("Desempenho por Mês"), unsafe_allow_html=True)
@@ -574,7 +574,7 @@ with tab_overview:
             dd_show["CTR"] = dd_show["CTR"].apply(fmt_pct)
             dd_show["CPA"] = dd_show["CPA"].apply(brl)
             dd_show["Valor Gasto"] = dd_show["Valor Gasto"].apply(brl)
-            st.dataframe(dd_show, use_container_width=True, hide_index=True, height=350)
+            st.dataframe(dd_show, width="stretch", hide_index=True, height=350)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  TAB 2 — FUNIL DE CONVERSÃO
@@ -607,7 +607,7 @@ with tab_funnel:
         ))
         fig.update_layout(**PLOTLY_TRANSPARENT, height=450,
                           margin=dict(l=20, r=20, t=10, b=10), showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with col_rates:
         st.markdown(H("Taxas de Conversão entre Etapas", "sh-green"), unsafe_allow_html=True)
@@ -650,7 +650,7 @@ with tab_funnel:
             fc["CPA"] = fc["CPA"].apply(brl)
         if "CR Click→Compra" in fc.columns:
             fc["CR Click→Compra"] = fc["CR Click→Compra"].apply(fmt_pct)
-        st.dataframe(fc, use_container_width=True, hide_index=True)
+        st.dataframe(fc, width="stretch", hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -695,7 +695,7 @@ def _render_creative_card(row, rank: int | None = None, badge: str = ""):
 
     with col_img:
         if thumb:
-            st.image(thumb, use_container_width=True)
+            st.image(thumb, width="stretch")
         else:
             st.markdown(
                 '<div style="background:#2a2a3a;border-radius:8px;padding:40px;'
@@ -813,7 +813,7 @@ with tab_creative:
                 with col:
                     thumb = _get_thumb(row)
                     if thumb:
-                        st.image(thumb, use_container_width=True)
+                        st.image(thumb, width="stretch")
                     else:
                         st.markdown(
                             '<div style="background:#2a2a3a;border-radius:8px;'
@@ -875,7 +875,7 @@ with tab_creative:
             display_ca["ROAS"] = display_ca["ROAS"].apply(lambda v: fmt_dec(v, suffix="x"))
         if "Frequência" in display_ca.columns:
             display_ca["Frequência"] = display_ca["Frequência"].apply(lambda v: fmt_dec(v, 1))
-        st.dataframe(display_ca, use_container_width=True, hide_index=True)
+        st.dataframe(display_ca, width="stretch", hide_index=True)
 
         # ── Charts ───────────────────────────────────────────────────────
         col_bar, col_scatter = st.columns(2)
@@ -900,7 +900,7 @@ with tab_creative:
                 yaxis=dict(autorange="reversed"),
                 legend=dict(orientation="h", y=-0.1, xanchor="center", x=0.5),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         with col_scatter:
             st.markdown(H("CPA vs ROAS por Criativo", "sh-purple"), unsafe_allow_html=True)
@@ -916,7 +916,7 @@ with tab_creative:
                     margin=dict(l=10, r=10, t=10, b=10),
                     xaxis=dict(title="CPA (R$)"), yaxis=dict(title="ROAS"),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
             else:
                 st.info("Sem conversões suficientes para scatter.")
 
@@ -944,13 +944,13 @@ with tab_creative:
                                   title="CTR por Criativo ao Longo do Tempo")
                     fig.update_layout(**PLOTLY_TRANSPARENT, height=350,
                                       margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
                 with col_freq:
                     fig = px.line(fat_daily, x="date", y="frequency", color="ad_name",
                                   title="Frequência por Criativo ao Longo do Tempo")
                     fig.update_layout(**PLOTLY_TRANSPARENT, height=350,
                                       margin=dict(l=10, r=10, t=40, b=10))
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width="stretch")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -982,7 +982,7 @@ with tab_audience:
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               yaxis=dict(title="Spend"), yaxis2=dict(title="CPA", overlaying="y", side="right"),
                               legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         with col_gender:
             gender_agg = demo_agg.groupby("gender", as_index=False).agg(
@@ -993,7 +993,7 @@ with tab_audience:
                          color_discrete_sequence=["#4FC3F7", "#FF8C00", "#AB47BC"])
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         demo_show = demo_agg.rename(columns={
             "age": "Idade", "gender": "Gênero", "spend": "Spend",
@@ -1005,7 +1005,7 @@ with tab_audience:
         demo_show["Spend"] = demo_show["Spend"].apply(brl)
         demo_show["CPA"] = demo_show["CPA"].apply(brl)
         demo_show["CTR"] = demo_show["CTR"].apply(fmt_pct)
-        st.dataframe(demo_show, use_container_width=True, hide_index=True)
+        st.dataframe(demo_show, width="stretch", hide_index=True)
     else:
         st.info("Dados demográficos não disponíveis.")
 
@@ -1030,7 +1030,7 @@ with tab_audience:
                          text=pl.nlargest(10, "spend")["spend"].apply(brl))
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               xaxis_tickangle=-45, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         with col_pl2:
             fig = px.bar(pl.nlargest(10, "spend"), x="placement", y="CPA",
@@ -1038,7 +1038,7 @@ with tab_audience:
                          text=pl.nlargest(10, "spend")["CPA"].apply(brl))
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               xaxis_tickangle=-45, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         pl_show = pl.rename(columns={
             "publisher_platform": "Plataforma", "platform_position": "Posição",
@@ -1053,7 +1053,7 @@ with tab_audience:
                 pl_show[c] = pl_show[c].apply(brl)
         if "CTR" in pl_show.columns:
             pl_show["CTR"] = pl_show["CTR"].apply(fmt_pct)
-        st.dataframe(pl_show, use_container_width=True, hide_index=True)
+        st.dataframe(pl_show, width="stretch", hide_index=True)
     else:
         st.info("Dados de posicionamento não disponíveis.")
 
@@ -1074,7 +1074,7 @@ with tab_audience:
                      text=rg.head(15)["spend"].apply(brl))
         fig.update_layout(**PLOTLY_TRANSPARENT, height=400, margin=dict(l=10, r=10, t=10, b=10),
                           xaxis_tickangle=-45)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
         rg_show = rg.rename(columns={
             "region": "Região", "spend": "Spend", "impressions": "Impressões",
             "clicks": "Cliques", "purchases": "Conversões",
@@ -1087,7 +1087,7 @@ with tab_audience:
                 rg_show[c] = rg_show[c].apply(brl)
         if "CTR" in rg_show.columns:
             rg_show["CTR"] = rg_show["CTR"].apply(fmt_pct)
-        st.dataframe(rg_show, use_container_width=True, hide_index=True)
+        st.dataframe(rg_show, width="stretch", hide_index=True)
     else:
         st.info("Dados regionais não disponíveis.")
 
@@ -1113,7 +1113,7 @@ with tab_diagnostic:
             "conversion_rank": "Conversion Ranking",
         }).copy()
         qr_show["Spend"] = qr_show["Spend"].apply(brl)
-        st.dataframe(qr_show, use_container_width=True, hide_index=True)
+        st.dataframe(qr_show, width="stretch", hide_index=True)
     else:
         st.info("Quality rankings não disponíveis na API.")
 
@@ -1179,7 +1179,7 @@ with tab_diagnostic:
                            text="✅ ESCALAR", showarrow=False, font=dict(color="#66BB6A", size=14))
         fig.add_annotation(x=0.95, y=0.05, xref="paper", yref="paper",
                            text="🛑 PAUSAR", showarrow=False, font=dict(color="#EF5350", size=14))
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
     else:
         st.info("Sem conversões suficientes para análise de eficiência.")
 
@@ -1208,7 +1208,7 @@ with tab_diagnostic:
             fig.update_layout(**PLOTLY_TRANSPARENT, height=300,
                               margin=dict(l=10, r=10, t=30, b=10),
                               title="CPA Diário (MA7)", yaxis=dict(title="CPA (R$)"))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         with col2:
             fig = go.Figure()
@@ -1219,4 +1219,4 @@ with tab_diagnostic:
             fig.update_layout(**PLOTLY_TRANSPARENT, height=300,
                               margin=dict(l=10, r=10, t=30, b=10),
                               title="ROAS Diário (MA7)", yaxis=dict(title="ROAS"))
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
