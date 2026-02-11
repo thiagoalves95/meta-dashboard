@@ -58,6 +58,38 @@ def col_mean(df, col):
     return df[col].mean() if col in df.columns else 0
 
 
+# ── Formatação brasileira ─────────────────────────────────────────────────────
+def brl(v):
+    """Formata valor como Real brasileiro: R$ 10.000,00"""
+    if pd.isna(v) or v == 0:
+        return "R$ 0,00"
+    s = f"{abs(v):,.2f}"          # "10,000.00"
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")  # "10.000,00"
+    return f"R$ {s}" if v >= 0 else f"-R$ {s}"
+
+
+def fmt_int(v):
+    """Formata inteiro com separador de milhar brasileiro: 10.000"""
+    if pd.isna(v):
+        return "0"
+    s = f"{int(v):,}".replace(",", ".")
+    return s
+
+
+def fmt_pct(v, decimals=2):
+    """Formata percentual: 12,34%"""
+    if pd.isna(v):
+        return "0,00%"
+    return f"{v:.{decimals}f}".replace(".", ",") + "%"
+
+
+def fmt_dec(v, decimals=2, suffix=""):
+    """Formata decimal genérico com vírgula: 1,50x"""
+    if pd.isna(v):
+        return f"0,{'0' * decimals}{suffix}"
+    return f"{v:.{decimals}f}".replace(".", ",") + suffix
+
+
 PLOTLY_TRANSPARENT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
@@ -367,36 +399,36 @@ with tab_overview:
     if is_conv or obj_mode == "Todas":
         st.markdown(H("Taxa de Cliques e Impressões"), unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Impressões", f"{total_imp:,.0f}")
-        c2.metric("Cliques", f"{total_clicks:,.0f}")
-        c3.metric("CTR", f"{ctr:.2f}%")
-        c4.metric("CPC", f"R$ {cpc:.2f}")
+        c1.metric("Impressões", fmt_int(total_imp))
+        c2.metric("Cliques", fmt_int(total_clicks))
+        c3.metric("CTR", fmt_pct(ctr))
+        c4.metric("CPC", brl(cpc))
 
         st.markdown(H("Investimentos & Conversão"), unsafe_allow_html=True)
         c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("Valor Gasto", f"R$ {total_spend:,.2f}")
-        c2.metric("Conversões", f"{total_purch:,.0f}")
-        c3.metric("CPA", f"R$ {cpa:,.2f}")
-        c4.metric("Receita", f"R$ {total_rev:,.2f}")
-        c5.metric("ROAS", f"{roas:.2f}x")
-        c6.metric("Ticket Médio", f"R$ {ticket_medio:,.2f}")
+        c1.metric("Valor Gasto", brl(total_spend))
+        c2.metric("Conversões", fmt_int(total_purch))
+        c3.metric("CPA", brl(cpa))
+        c4.metric("Receita", brl(total_rev))
+        c5.metric("ROAS", fmt_dec(roas, suffix="x"))
+        c6.metric("Ticket Médio", brl(ticket_medio))
 
     if is_tofu:
         st.markdown(H("Alcance e Impressões", "sh-blue"), unsafe_allow_html=True)
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Impressões", f"{total_imp:,.0f}")
-        c2.metric("Alcance", f"{total_reach:,.0f}")
-        c3.metric("Frequência", f"{avg_freq:.2f}")
-        c4.metric("CPM", f"R$ {cpm:.2f}")
-        c5.metric("CPR (cost/1k reach)", f"R$ {cpr:.2f}")
+        c1.metric("Impressões", fmt_int(total_imp))
+        c2.metric("Alcance", fmt_int(total_reach))
+        c3.metric("Frequência", fmt_dec(avg_freq))
+        c4.metric("CPM", brl(cpm))
+        c5.metric("CPR (custo/1k alcance)", brl(cpr))
 
         st.markdown(H("Engajamento e Tráfego", "sh-blue"), unsafe_allow_html=True)
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Cliques", f"{total_clicks:,.0f}")
-        c2.metric("CTR", f"{ctr:.2f}%")
-        c3.metric("CPC", f"R$ {cpc:.2f}")
-        c4.metric("Engajamento Total", f"{total_engagement:,.0f}")
-        c5.metric("Custo/Engajamento", f"R$ {cost_per_eng:.2f}")
+        c1.metric("Cliques", fmt_int(total_clicks))
+        c2.metric("CTR", fmt_pct(ctr))
+        c3.metric("CPC", brl(cpc))
+        c4.metric("Engajamento Total", fmt_int(total_engagement))
+        c5.metric("Custo/Engajamento", brl(cost_per_eng))
 
     # ── Trend line (uses daily data — lazy loaded) ─────────────────────
     st.markdown(H("Tendência Diária (com média móvel 7d)"), unsafe_allow_html=True)
@@ -457,19 +489,17 @@ with tab_overview:
         "spend": "Valor Gasto", "reach": "Alcance", "purchases": "Conversões",
         "revenue": "Receita", "engagement": "Engajamento",
     })
-    st.dataframe(ov, use_container_width=True, hide_index=True, column_config={
-        "Impressões": st.column_config.NumberColumn(format="%d"),
-        "Cliques": st.column_config.NumberColumn(format="%d"),
-        "Alcance": st.column_config.NumberColumn(format="%d"),
-        "Conversões": st.column_config.NumberColumn(format="%d"),
-        "Engajamento": st.column_config.NumberColumn(format="%d"),
-        "Valor Gasto": st.column_config.NumberColumn(format="R$ %.2f"),
-        "Receita": st.column_config.NumberColumn(format="R$ %.2f"),
-        "CTR": st.column_config.NumberColumn(format="%.2f%%"),
-        "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-        "ROAS": st.column_config.NumberColumn(format="%.2fx"),
-        "CPM": st.column_config.NumberColumn(format="R$ %.2f"),
-    })
+    for c in ["Impressões", "Cliques", "Alcance", "Conversões", "Engajamento"]:
+        if c in ov.columns:
+            ov[c] = ov[c].apply(fmt_int)
+    for c in ["Valor Gasto", "Receita", "CPA", "CPM"]:
+        if c in ov.columns:
+            ov[c] = ov[c].apply(brl)
+    if "CTR" in ov.columns:
+        ov["CTR"] = ov["CTR"].apply(fmt_pct)
+    if "ROAS" in ov.columns:
+        ov["ROAS"] = ov["ROAS"].apply(lambda v: fmt_dec(v, suffix="x"))
+    st.dataframe(ov, use_container_width=True, hide_index=True)
 
     # ── Pie meses + Desempenho mensal (uses monthly-aggregated camp data) ─
     col_pie, col_monthly = st.columns([2, 3])
@@ -499,21 +529,16 @@ with tab_overview:
             dd["CPA"] = dd.apply(lambda r: safe_div(r["spend"], r["purchases"]), axis=1)
             dd["CTR"] = dd.apply(lambda r: safe_div(r["clicks"], r["impressions"], 100), axis=1)
             dd["Mês"] = dd["date"].dt.strftime("%m/%Y")
-            st.dataframe(
-                dd[["Mês", "impressions", "clicks", "purchases", "CTR", "CPA", "spend"]].rename(columns={
-                    "impressions": "Impressões", "clicks": "Cliques",
-                    "purchases": "Conversões", "spend": "Valor Gasto",
-                }),
-                use_container_width=True, hide_index=True, height=350,
-                column_config={
-                    "Impressões": st.column_config.NumberColumn(format="%d"),
-                    "Cliques": st.column_config.NumberColumn(format="%d"),
-                    "Conversões": st.column_config.NumberColumn(format="%d"),
-                    "CTR": st.column_config.NumberColumn(format="%.2f%%"),
-                    "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-                    "Valor Gasto": st.column_config.NumberColumn(format="R$ %.2f"),
-                },
-            )
+            dd_show = dd[["Mês", "impressions", "clicks", "purchases", "CTR", "CPA", "spend"]].rename(columns={
+                "impressions": "Impressões", "clicks": "Cliques",
+                "purchases": "Conversões", "spend": "Valor Gasto",
+            }).copy()
+            for c in ["Impressões", "Cliques", "Conversões"]:
+                dd_show[c] = dd_show[c].apply(fmt_int)
+            dd_show["CTR"] = dd_show["CTR"].apply(fmt_pct)
+            dd_show["CPA"] = dd_show["CPA"].apply(brl)
+            dd_show["Valor Gasto"] = dd_show["Valor Gasto"].apply(brl)
+            st.dataframe(dd_show, use_container_width=True, hide_index=True, height=350)
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  TAB 2 — FUNIL DE CONVERSÃO
@@ -580,16 +605,16 @@ with tab_funnel:
             "link_clicks": "Cliques Link", "lpv": "LPV", "atc": "Add to Cart",
             "purchases": "Compras", "spend": "Spend",
         })
-        st.dataframe(fc, use_container_width=True, hide_index=True, column_config={
-            "Impressões": st.column_config.NumberColumn(format="%d"),
-            "Cliques Link": st.column_config.NumberColumn(format="%d"),
-            "LPV": st.column_config.NumberColumn(format="%d"),
-            "Add to Cart": st.column_config.NumberColumn(format="%d"),
-            "Compras": st.column_config.NumberColumn(format="%d"),
-            "Spend": st.column_config.NumberColumn(format="R$ %.2f"),
-            "CR Click→Compra": st.column_config.NumberColumn(format="%.2f%%"),
-            "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-        })
+        for c in ["Impressões", "Cliques Link", "LPV", "Add to Cart", "Compras"]:
+            if c in fc.columns:
+                fc[c] = fc[c].apply(fmt_int)
+        if "Spend" in fc.columns:
+            fc["Spend"] = fc["Spend"].apply(brl)
+        if "CPA" in fc.columns:
+            fc["CPA"] = fc["CPA"].apply(brl)
+        if "CR Click→Compra" in fc.columns:
+            fc["CR Click→Compra"] = fc["CR Click→Compra"].apply(fmt_pct)
+        st.dataframe(fc, use_container_width=True, hide_index=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -648,23 +673,23 @@ def _render_creative_card(row, rank: int | None = None, badge: str = ""):
 
     with col_metrics:
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Spend", f"R$ {row.get('spend', 0):,.2f}")
-        m2.metric("Impressões", f"{row.get('impressions', 0):,.0f}")
-        m3.metric("Cliques", f"{row.get('clicks', 0):,.0f}")
-        m4.metric("CTR", f"{row.get('CTR', 0):.2f}%")
+        m1.metric("Spend", brl(row.get('spend', 0)))
+        m2.metric("Impressões", fmt_int(row.get('impressions', 0)))
+        m3.metric("Cliques", fmt_int(row.get('clicks', 0)))
+        m4.metric("CTR", fmt_pct(row.get('CTR', 0)))
 
         m5, m6, m7, m8 = st.columns(4)
-        m5.metric("Conversões", f"{row.get('purchases', 0):,.0f}")
-        m6.metric("CPA", f"R$ {row.get('CPA', 0):,.2f}")
-        m7.metric("ROAS", f"{row.get('ROAS', 0):.2f}x")
-        m8.metric("Engajamento", f"{row.get('engagement', 0):,.0f}")
+        m5.metric("Conversões", fmt_int(row.get('purchases', 0)))
+        m6.metric("CPA", brl(row.get('CPA', 0)))
+        m7.metric("ROAS", fmt_dec(row.get('ROAS', 0), suffix="x"))
+        m8.metric("Engajamento", fmt_int(row.get('engagement', 0)))
 
         if row.get("Hook Rate", 0) > 0 or row.get("Hold Rate", 0) > 0:
             m9, m10, m11, m12 = st.columns(4)
-            m9.metric("Hook Rate", f"{row.get('Hook Rate', 0):.2f}%")
-            m10.metric("Hold Rate", f"{row.get('Hold Rate', 0):.2f}%")
-            m11.metric("Video Views", f"{row.get('vv', 0):,.0f}")
-            m12.metric("Frequência", f"{row.get('avg_freq', 0):.1f}")
+            m9.metric("Hook Rate", fmt_pct(row.get('Hook Rate', 0)))
+            m10.metric("Hold Rate", fmt_pct(row.get('Hold Rate', 0)))
+            m11.metric("Video Views", fmt_int(row.get('vv', 0)))
+            m12.metric("Frequência", fmt_dec(row.get('avg_freq', 0), 1))
 
     st.markdown("---")
 
@@ -712,10 +737,10 @@ with tab_creative:
         # ── KPIs de Vídeo ────────────────────────────────────────────────
         st.markdown(H("Performance de Vídeo", "sh-purple"), unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Video Views", f"{total_vv:,.0f}")
-        c2.metric("ThruPlay", f"{total_thruplay:,.0f}")
-        c3.metric("Hook Rate (views/imp)", f"{hook_rate:.2f}%")
-        c4.metric("Hold Rate (thru/views)", f"{hold_rate:.2f}%")
+        c1.metric("Video Views", fmt_int(total_vv))
+        c2.metric("ThruPlay", fmt_int(total_thruplay))
+        c3.metric("Hook Rate (views/imp)", fmt_pct(hook_rate))
+        c4.metric("Hold Rate (thru/views)", fmt_pct(hold_rate))
 
         # ── Winners — Best ROAS with conversions ─────────────────────────
         winners = ca[ca["purchases"] > 0].nsmallest(3, "CPA")
@@ -765,14 +790,14 @@ with tab_creative:
                     if headline and pd.notna(headline):
                         st.caption(f"_{str(headline)[:80]}_")
                     st.markdown(
-                        f"Spend: **R$ {row['spend']:,.2f}** · "
-                        f"CTR: **{row['CTR']:.2f}%** · "
-                        f"CPA: **R$ {row['CPA']:,.2f}**"
+                        f"Spend: **{brl(row['spend'])}** · "
+                        f"CTR: **{fmt_pct(row['CTR'])}** · "
+                        f"CPA: **{brl(row['CPA'])}**"
                     )
                     if row["purchases"] > 0:
                         st.markdown(
-                            f"Conv: **{row['purchases']:,.0f}** · "
-                            f"ROAS: **{row['ROAS']:.2f}x**"
+                            f"Conv: **{fmt_int(row['purchases'])}** · "
+                            f"ROAS: **{fmt_dec(row['ROAS'], suffix='x')}**"
                         )
                     if row.get("avg_freq", 0) >= 3:
                         st.markdown(
@@ -801,22 +826,20 @@ with tab_creative:
         display_ca = ca[[c for c in table_cols if c in ca.columns]].rename(
             columns={k: v for k, v in table_cols.items() if k in ca.columns}
         )
-        st.dataframe(display_ca, use_container_width=True, hide_index=True, column_config={
-            "Impressões": st.column_config.NumberColumn(format="%d"),
-            "Cliques": st.column_config.NumberColumn(format="%d"),
-            "Alcance": st.column_config.NumberColumn(format="%d"),
-            "Conversões": st.column_config.NumberColumn(format="%d"),
-            "Engajamento": st.column_config.NumberColumn(format="%d"),
-            "Video Views": st.column_config.NumberColumn(format="%d"),
-            "Spend": st.column_config.NumberColumn(format="R$ %.2f"),
-            "Receita": st.column_config.NumberColumn(format="R$ %.2f"),
-            "CTR": st.column_config.NumberColumn(format="%.2f%%"),
-            "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-            "ROAS": st.column_config.NumberColumn(format="%.2fx"),
-            "Hook Rate": st.column_config.NumberColumn(format="%.2f%%"),
-            "Hold Rate": st.column_config.NumberColumn(format="%.2f%%"),
-            "Frequência": st.column_config.NumberColumn(format="%.1f"),
-        })
+        for c in ["Impressões", "Cliques", "Alcance", "Conversões", "Engajamento", "Video Views"]:
+            if c in display_ca.columns:
+                display_ca[c] = display_ca[c].apply(fmt_int)
+        for c in ["Spend", "Receita", "CPA"]:
+            if c in display_ca.columns:
+                display_ca[c] = display_ca[c].apply(brl)
+        for c in ["CTR", "Hook Rate", "Hold Rate"]:
+            if c in display_ca.columns:
+                display_ca[c] = display_ca[c].apply(fmt_pct)
+        if "ROAS" in display_ca.columns:
+            display_ca["ROAS"] = display_ca["ROAS"].apply(lambda v: fmt_dec(v, suffix="x"))
+        if "Frequência" in display_ca.columns:
+            display_ca["Frequência"] = display_ca["Frequência"].apply(lambda v: fmt_dec(v, 1))
+        st.dataframe(display_ca, use_container_width=True, hide_index=True)
 
         # ── Charts ───────────────────────────────────────────────────────
         col_bar, col_scatter = st.columns(2)
@@ -827,12 +850,12 @@ with tab_creative:
             fig.add_trace(go.Bar(
                 y=top10["ad_name"], x=top10["spend"], name="Spend",
                 orientation="h", marker_color="#FF8C00",
-                text=top10["spend"].apply(lambda v: f"R$ {v:,.0f}"), textposition="auto",
+                text=top10["spend"].apply(brl), textposition="auto",
             ))
             fig.add_trace(go.Bar(
                 y=top10["ad_name"], x=top10["purchases"], name="Conversões",
                 orientation="h", marker_color="#4FC3F7",
-                text=top10["purchases"].apply(lambda v: f"{v:,.0f}"), textposition="auto",
+                text=top10["purchases"].apply(fmt_int), textposition="auto",
             ))
             fig.update_layout(
                 **PLOTLY_TRANSPARENT, barmode="group", height=400,
@@ -930,23 +953,23 @@ with tab_audience:
                 spend=("spend", "sum"), purchases=("purchases", "sum"))
             gender_agg["CPA"] = gender_agg.apply(lambda r: safe_div(r["spend"], r["purchases"]), axis=1)
             fig = px.bar(gender_agg, x="gender", y="spend", color="gender",
-                         text=gender_agg["spend"].apply(lambda v: f"R$ {v:,.0f}"),
+                         text=gender_agg["spend"].apply(brl),
                          color_discrete_sequence=["#4FC3F7", "#FF8C00", "#AB47BC"])
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
-        st.dataframe(demo_agg.rename(columns={
+        demo_show = demo_agg.rename(columns={
             "age": "Idade", "gender": "Gênero", "spend": "Spend",
             "impressions": "Impressões", "clicks": "Cliques", "purchases": "Conversões",
-        }), use_container_width=True, hide_index=True, column_config={
-            "Spend": st.column_config.NumberColumn(format="R$ %.2f"),
-            "Impressões": st.column_config.NumberColumn(format="%d"),
-            "Cliques": st.column_config.NumberColumn(format="%d"),
-            "Conversões": st.column_config.NumberColumn(format="%d"),
-            "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-            "CTR": st.column_config.NumberColumn(format="%.2f%%"),
-        })
+        }).copy()
+        for c in ["Impressões", "Cliques", "Conversões"]:
+            if c in demo_show.columns:
+                demo_show[c] = demo_show[c].apply(fmt_int)
+        demo_show["Spend"] = demo_show["Spend"].apply(brl)
+        demo_show["CPA"] = demo_show["CPA"].apply(brl)
+        demo_show["CTR"] = demo_show["CTR"].apply(fmt_pct)
+        st.dataframe(demo_show, use_container_width=True, hide_index=True)
     else:
         st.info("Dados demográficos não disponíveis.")
 
@@ -968,7 +991,7 @@ with tab_audience:
         with col_pl1:
             fig = px.bar(pl.nlargest(10, "spend"), x="placement", y="spend",
                          color="spend", color_continuous_scale=["#01579B", "#FF8C00"],
-                         text=pl.nlargest(10, "spend")["spend"].apply(lambda v: f"R$ {v:,.0f}"))
+                         text=pl.nlargest(10, "spend")["spend"].apply(brl))
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               xaxis_tickangle=-45, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
@@ -976,25 +999,25 @@ with tab_audience:
         with col_pl2:
             fig = px.bar(pl.nlargest(10, "spend"), x="placement", y="CPA",
                          color="CPA", color_continuous_scale=["#66BB6A", "#EF5350"],
-                         text=pl.nlargest(10, "spend")["CPA"].apply(lambda v: f"R$ {v:,.0f}"))
+                         text=pl.nlargest(10, "spend")["CPA"].apply(brl))
             fig.update_layout(**PLOTLY_TRANSPARENT, height=350, margin=dict(l=10, r=10, t=10, b=10),
                               xaxis_tickangle=-45, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
-        st.dataframe(pl.rename(columns={
+        pl_show = pl.rename(columns={
             "publisher_platform": "Plataforma", "platform_position": "Posição",
             "spend": "Spend", "impressions": "Impressões", "clicks": "Cliques",
             "purchases": "Conversões",
-        }).drop(columns=["placement"], errors="ignore"),
-            use_container_width=True, hide_index=True, column_config={
-            "Spend": st.column_config.NumberColumn(format="R$ %.2f"),
-            "Impressões": st.column_config.NumberColumn(format="%d"),
-            "Cliques": st.column_config.NumberColumn(format="%d"),
-            "Conversões": st.column_config.NumberColumn(format="%d"),
-            "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-            "CTR": st.column_config.NumberColumn(format="%.2f%%"),
-            "CPM": st.column_config.NumberColumn(format="R$ %.2f"),
-        })
+        }).drop(columns=["placement"], errors="ignore").copy()
+        for c in ["Impressões", "Cliques", "Conversões"]:
+            if c in pl_show.columns:
+                pl_show[c] = pl_show[c].apply(fmt_int)
+        for c in ["Spend", "CPA", "CPM"]:
+            if c in pl_show.columns:
+                pl_show[c] = pl_show[c].apply(brl)
+        if "CTR" in pl_show.columns:
+            pl_show["CTR"] = pl_show["CTR"].apply(fmt_pct)
+        st.dataframe(pl_show, use_container_width=True, hide_index=True)
     else:
         st.info("Dados de posicionamento não disponíveis.")
 
@@ -1012,21 +1035,23 @@ with tab_audience:
         rg = rg.sort_values("spend", ascending=False)
         fig = px.bar(rg.head(15), x="region", y="spend", color="CPA",
                      color_continuous_scale=["#66BB6A", "#FFCA28", "#EF5350"],
-                     text=rg.head(15)["spend"].apply(lambda v: f"R$ {v:,.0f}"))
+                     text=rg.head(15)["spend"].apply(brl))
         fig.update_layout(**PLOTLY_TRANSPARENT, height=400, margin=dict(l=10, r=10, t=10, b=10),
                           xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
-        st.dataframe(rg.rename(columns={
+        rg_show = rg.rename(columns={
             "region": "Região", "spend": "Spend", "impressions": "Impressões",
             "clicks": "Cliques", "purchases": "Conversões",
-        }), use_container_width=True, hide_index=True, column_config={
-            "Spend": st.column_config.NumberColumn(format="R$ %.2f"),
-            "Impressões": st.column_config.NumberColumn(format="%d"),
-            "Cliques": st.column_config.NumberColumn(format="%d"),
-            "Conversões": st.column_config.NumberColumn(format="%d"),
-            "CPA": st.column_config.NumberColumn(format="R$ %.2f"),
-            "CTR": st.column_config.NumberColumn(format="%.2f%%"),
-        })
+        }).copy()
+        for c in ["Impressões", "Cliques", "Conversões"]:
+            if c in rg_show.columns:
+                rg_show[c] = rg_show[c].apply(fmt_int)
+        for c in ["Spend", "CPA"]:
+            if c in rg_show.columns:
+                rg_show[c] = rg_show[c].apply(brl)
+        if "CTR" in rg_show.columns:
+            rg_show["CTR"] = rg_show["CTR"].apply(fmt_pct)
+        st.dataframe(rg_show, use_container_width=True, hide_index=True)
     else:
         st.info("Dados regionais não disponíveis.")
 
@@ -1045,14 +1070,14 @@ with tab_diagnostic:
             engagement_rank=("engagement_rate_ranking", "first"),
             conversion_rank=("conversion_rate_ranking", "first"),
         ).sort_values("spend", ascending=False)
-        st.dataframe(qr.rename(columns={
+        qr_show = qr.rename(columns={
             "ad_name": "Criativo", "spend": "Spend",
             "quality": "Quality Ranking",
             "engagement_rank": "Engagement Ranking",
             "conversion_rank": "Conversion Ranking",
-        }), use_container_width=True, hide_index=True, column_config={
-            "Spend": st.column_config.NumberColumn(format="R$ %.2f"),
-        })
+        }).copy()
+        qr_show["Spend"] = qr_show["Spend"].apply(brl)
+        st.dataframe(qr_show, use_container_width=True, hide_index=True)
     else:
         st.info("Quality rankings não disponíveis na API.")
 
@@ -1075,9 +1100,9 @@ with tab_diagnostic:
                 severity = "alert-box" if row["avg_freq"] >= 5 else "alert-box-warn"
                 st.markdown(
                     f'<div class="{severity}">⚠️ <b>{row["ad_name"]}</b> — '
-                    f'Frequência média: {row["avg_freq"]:.1f} | '
-                    f'CTR: {row["ctr"]:.2f}% | '
-                    f'Spend: R$ {row["spend"]:,.2f}</div>',
+                    f'Frequência média: {fmt_dec(row["avg_freq"], 1)} | '
+                    f'CTR: {fmt_pct(row["ctr"])} | '
+                    f'Spend: {brl(row["spend"])}</div>',
                     unsafe_allow_html=True,
                 )
         else:
@@ -1105,9 +1130,9 @@ with tab_diagnostic:
             color_continuous_scale=["#EF5350", "#FFCA28", "#66BB6A"],
         )
         fig.add_hline(y=median_roas, line_dash="dash", line_color="#666",
-                       annotation_text=f"ROAS mediano: {median_roas:.2f}")
+                       annotation_text=f"ROAS mediano: {fmt_dec(median_roas)}")
         fig.add_vline(x=median_cpa, line_dash="dash", line_color="#666",
-                       annotation_text=f"CPA mediano: R$ {median_cpa:.0f}")
+                       annotation_text=f"CPA mediano: {brl(median_cpa)}")
         fig.update_layout(
             **PLOTLY_TRANSPARENT, height=450,
             margin=dict(l=10, r=10, t=10, b=10),
