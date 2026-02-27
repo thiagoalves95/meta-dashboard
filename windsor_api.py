@@ -70,6 +70,7 @@ class WindsorClient:
             "date_from": date_from,
             "date_to": date_to,
             "fields": ",".join(fields),
+            "_max_rows": 10000,
         }
         if account_name:
             params["account_name"] = account_name
@@ -274,16 +275,43 @@ class WindsorClient:
         self, date_from: str, date_to: str, account_name: str | None = None,
         progress_cb=None,
     ) -> pd.DataFrame:
-        fields = [
+        # Step 1: core metrics (lightweight — returns ALL campaigns)
+        core_fields = [
             "date", "account_name", "campaign", "campaign_id", "campaign_objective",
             "adset_name", "ad_name", "ad_id", "ad_status",
             *self._PERFORMANCE, *self._FUNNEL, *self._ENGAGEMENT, *self._VIDEO,
+        ]
+        df_core = self._fetch(core_fields, date_from, date_to, account_name,
+                              date_aggregation="month",
+                              filters=[["spend", "gt", 0]],
+                              progress_cb=progress_cb)
+        if df_core.empty:
+            return df_core
+
+        # Step 2: creative assets + quality (may return fewer rows)
+        asset_fields = [
+            "ad_name", "ad_id",
             *self._QUALITY, *self._CREATIVE_ASSETS,
         ]
-        return self._fetch(fields, date_from, date_to, account_name,
-                           date_aggregation="month",
-                           filters=[["spend", "gt", 0]],
-                           progress_cb=progress_cb)
+        try:
+            df_assets = self._fetch(asset_fields, date_from, date_to, account_name,
+                                    date_aggregation="month",
+                                    filters=[["spend", "gt", 0]])
+        except Exception:
+            df_assets = pd.DataFrame()
+
+        if not df_assets.empty and "ad_name" in df_assets.columns:
+            # Keep first asset per ad_name
+            asset_cols = [c for c in df_assets.columns
+                          if c not in ("ad_name", "ad_id", "date")]
+            df_assets_dedup = df_assets.drop_duplicates(subset=["ad_name"], keep="first")
+            # Only merge columns not already in core
+            merge_cols = ["ad_name"] + [c for c in asset_cols if c not in df_core.columns]
+            if len(merge_cols) > 1:
+                df_core = df_core.merge(
+                    df_assets_dedup[merge_cols], on="ad_name", how="left")
+
+        return df_core
 
     # ── Ad daily trend (for fatigue charts — minimal fields) ──────────────
     def get_ad_daily(

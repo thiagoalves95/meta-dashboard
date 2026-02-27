@@ -4,3 +4,5 @@ plotly
 requests
 python-dotenv
 python-dateutil
+fpdf2
+kaleido
