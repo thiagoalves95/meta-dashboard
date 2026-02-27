@@ -5,4 +5,4 @@ requests
 python-dotenv
 python-dateutil
 fpdf2
-kaleido
+kaleido==0.2.1
