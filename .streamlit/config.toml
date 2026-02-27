@@ -2,8 +2,12 @@
 base = "dark"
 primaryColor = "#FF6B00"
 backgroundColor = "#0E1117"
-secondaryBackgroundColor = "#1E1E2E"
+secondaryBackgroundColor = "#151521"
 textColor = "#FAFAFA"
+font = "sans serif"
 
 [browser]
 gatherUsageStats = false
+
+[server]
+headless = true

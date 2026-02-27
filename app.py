@@ -14,7 +14,7 @@ from windsor_api import WindsorClient, GA4Client
 load_dotenv()
 
 st.set_page_config(
-    page_title="Relatório Meta Ads — Análise Profunda",
+    page_title="Meta Dashboard — Performance Analytics",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -221,13 +221,24 @@ def _normalise_campaign_name(name):
 PLOTLY_TRANSPARENT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="white"),
+    font=dict(color="#E5E7EB", family="Inter, sans-serif", size=12),
 )
 
 CHART_DEFAULTS = dict(
     **PLOTLY_TRANSPARENT,
-    hoverlabel=dict(bgcolor="#1E1E2E", font_size=13, font_color="white"),
+    hoverlabel=dict(
+        bgcolor="rgba(30,30,46,0.95)", font_size=13, font_color="#FAFAFA",
+        bordercolor="rgba(255,255,255,0.1)",
+        font_family="Inter, sans-serif",
+    ),
     hovermode="x unified",
+    xaxis=dict(gridcolor="rgba(255,255,255,0.04)", zerolinecolor="rgba(255,255,255,0.06)"),
+    yaxis=dict(gridcolor="rgba(255,255,255,0.04)", zerolinecolor="rgba(255,255,255,0.06)"),
+    legend=dict(
+        font=dict(size=11, color="#9CA3AF"),
+        bgcolor="rgba(0,0,0,0)",
+    ),
+    margin=dict(l=10, r=10, t=10, b=10),
 )
 
 
@@ -245,21 +256,23 @@ def _add_annotations(fig, x_series, y_series, fmt_fn=None):
     fig.add_annotation(
         x=x_series.loc[max_i], y=y_vals.loc[max_i],
         text=f"Max: {fmt(y_vals.loc[max_i])}",
-        showarrow=True, arrowhead=2, arrowcolor="#22C55E",
-        font=dict(color="#22C55E", size=11),
-        bgcolor="rgba(0,0,0,0.6)", borderpad=3,
+        showarrow=True, arrowhead=2, arrowcolor="#4ADE80",
+        font=dict(color="#4ADE80", size=11, family="Inter, sans-serif"),
+        bgcolor="rgba(26,26,46,0.85)", borderpad=4,
+        bordercolor="rgba(74,222,128,0.3)", borderwidth=1,
     )
     fig.add_annotation(
         x=x_series.loc[min_i], y=y_vals.loc[min_i],
         text=f"Min: {fmt(y_vals.loc[min_i])}",
-        showarrow=True, arrowhead=2, arrowcolor="#EF4444",
-        font=dict(color="#EF4444", size=11),
-        bgcolor="rgba(0,0,0,0.6)", borderpad=3,
+        showarrow=True, arrowhead=2, arrowcolor="#F87171",
+        font=dict(color="#F87171", size=11, family="Inter, sans-serif"),
+        bgcolor="rgba(26,26,46,0.85)", borderpad=4,
+        bordercolor="rgba(248,113,113,0.3)", borderwidth=1,
     )
     fig.add_hline(
-        y=mean_v, line_dash="dot", line_color="#555",
+        y=mean_v, line_dash="dot", line_color="rgba(255,255,255,0.12)",
         annotation_text=f"Média: {fmt(mean_v)}",
-        annotation_font_color="#999", annotation_font_size=10,
+        annotation_font_color="#9CA3AF", annotation_font_size=10,
     )
 
 
@@ -306,70 +319,422 @@ def _to_csv(df):
 # ═══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
     :root{
         --color-positive:#22C55E;--color-negative:#EF4444;--color-warning:#F59E0B;
         --color-info:#3B82F6;--color-meta:#FF6B00;--color-ga4:#0EA5E9;
-        --color-surface:#1a1a2e;
+        --color-surface:rgba(26,26,46,0.65);--color-surface-solid:#1a1a2e;
+        --color-bg:#0E1117;--color-border:rgba(255,255,255,0.06);
+        --color-text:#FAFAFA;--color-text-secondary:#9CA3AF;
+        --shadow-sm:0 2px 8px rgba(0,0,0,0.25);
+        --shadow-md:0 4px 16px rgba(0,0,0,0.35);
+        --shadow-lg:0 8px 32px rgba(0,0,0,0.45);
+        --radius-sm:8px;--radius-md:12px;--radius-lg:16px;
+        --font-main:'Inter',sans-serif;
     }
-    .section-header{border-left:4px solid var(--color-meta);padding:8px 16px;
-        margin:28px 0 14px;font-size:1.05rem;font-weight:700;color:#FAFAFA}
-    .sh-blue{border-left-color:var(--color-info)!important}
-    .sh-green{border-left-color:var(--color-positive)!important}
-    .sh-purple{border-left-color:#A855F7!important}
-    .sh-red{border-left-color:var(--color-negative)!important}
-    .sh-teal{border-left-color:var(--color-ga4)!important}
-    .kpi-group{background:var(--color-surface);border-radius:10px;
-        padding:16px 20px 8px;margin:8px 0 18px}
-    .insight-box{background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.25);
-        border-radius:8px;padding:14px 18px;margin:0 0 18px;font-size:.92rem;
-        line-height:1.7;color:#D1D5DB}
-    .insight-box b{color:#FAFAFA}
-    .badge-good{display:inline-block;background:var(--color-positive);color:#fff;
-        padding:2px 10px;border-radius:12px;font-size:.78rem;font-weight:600}
-    .badge-bad{display:inline-block;background:var(--color-negative);color:#fff;
-        padding:2px 10px;border-radius:12px;font-size:.78rem;font-weight:600}
-    .badge-warn{display:inline-block;background:var(--color-warning);color:#fff;
-        padding:2px 10px;border-radius:12px;font-size:.78rem;font-weight:600}
-    .main-title{background:#1E1E2E;border:1px solid #333;border-radius:8px;
-        padding:14px 20px;text-align:center;margin-bottom:20px}
-    .main-title h1{font-size:1.45rem;font-weight:700;color:#FAFAFA;margin:0 0 4px}
-    .main-title .subtitle{font-size:.82rem;color:#888;margin:0}
-    .main-title .ic-meta{color:#FF6B00;margin-right:6px}
-    .main-title .ic-ga4{color:#0EA5E9;margin-left:6px}
-    [data-testid="stMetricValue"]{font-size:1.8rem!important;font-weight:700!important}
-    [data-testid="stMetricLabel"]{font-size:.82rem!important;color:#AAA!important}
-    .block-container{padding-top:1.2rem}
-    .alert-box{background:#C62828;color:#fff;padding:12px 16px;border-radius:8px;
-        margin:8px 0;font-weight:600}
-    .alert-box-warn{background:#E65100;color:#fff;padding:12px 16px;border-radius:8px;
-        margin:8px 0;font-weight:600}
-    .preset-btn button{font-size:.78rem!important;padding:4px 8px!important}
+
+    /* ── Global Font ──────────────────────────────────────────────── */
+    html,body,[class*="css"],
+    .stMarkdown,.stButton>button,
+    [data-testid="stSidebar"],
+    .stSelectbox,[data-testid="stForm"],
+    input,textarea,select{
+        font-family:var(--font-main)!important;
+    }
+
+    /* ── Hide Streamlit Chrome ────────────────────────────────────── */
+    #MainMenu{visibility:hidden}
+    footer{visibility:hidden}
+    [data-testid="stHeader"]{background:transparent!important;backdrop-filter:blur(8px)}
+    [data-testid="stToolbar"]{display:none!important}
+    [data-testid="stDecoration"]{display:none!important}
+    .block-container{padding-top:1rem;padding-bottom:1rem}
+
+    /* ── Custom Scrollbar ─────────────────────────────────────────── */
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.2)}
+
+    /* ── Section Headers ──────────────────────────────────────────── */
+    .section-header{
+        position:relative;padding:10px 18px 10px 20px;
+        margin:32px 0 16px;font-size:1rem;font-weight:700;
+        color:var(--color-text);letter-spacing:-0.01em;
+        border-left:none;border-radius:var(--radius-sm);
+        background:linear-gradient(135deg,rgba(255,107,0,0.06) 0%,transparent 60%);
+    }
+    .section-header::before{
+        content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+        border-radius:4px;
+        background:linear-gradient(180deg,var(--color-meta),#FF9E45);
+    }
+    .sh-blue{background:linear-gradient(135deg,rgba(59,130,246,0.06) 0%,transparent 60%)}
+    .sh-blue::before{background:linear-gradient(180deg,var(--color-info),#60A5FA)!important}
+    .sh-green{background:linear-gradient(135deg,rgba(34,197,94,0.06) 0%,transparent 60%)}
+    .sh-green::before{background:linear-gradient(180deg,var(--color-positive),#4ADE80)!important}
+    .sh-purple{background:linear-gradient(135deg,rgba(168,85,247,0.06) 0%,transparent 60%)}
+    .sh-purple::before{background:linear-gradient(180deg,#A855F7,#C084FC)!important}
+    .sh-red{background:linear-gradient(135deg,rgba(239,68,68,0.06) 0%,transparent 60%)}
+    .sh-red::before{background:linear-gradient(180deg,var(--color-negative),#F87171)!important}
+    .sh-teal{background:linear-gradient(135deg,rgba(14,165,233,0.06) 0%,transparent 60%)}
+    .sh-teal::before{background:linear-gradient(180deg,var(--color-ga4),#38BDF8)!important}
+
+    /* ── KPI Grid ─────────────────────────────────────────────────── */
+    .kpi-grid{
+        display:grid;gap:12px;margin:8px 0 20px;
+        grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    }
+    .kpi-card{
+        background:var(--color-surface);
+        backdrop-filter:blur(12px);
+        border:1px solid var(--color-border);
+        border-radius:var(--radius-md);
+        padding:16px 18px 14px;
+        transition:all 0.25s ease;
+        position:relative;overflow:hidden;
+        box-shadow:var(--shadow-sm);
+    }
+    .kpi-card:hover{
+        transform:translateY(-2px);
+        box-shadow:var(--shadow-md);
+        border-color:rgba(255,255,255,0.12);
+    }
+    .kpi-card::before{
+        content:'';position:absolute;top:0;left:0;right:0;height:3px;
+        background:linear-gradient(90deg,var(--color-meta),#FF9E45);opacity:0.5;
+        border-radius:var(--radius-md) var(--radius-md) 0 0;
+    }
+    .kpi-card.rag-green::before{background:linear-gradient(90deg,var(--color-positive),#4ADE80);opacity:0.8}
+    .kpi-card.rag-amber::before{background:linear-gradient(90deg,var(--color-warning),#FBBF24);opacity:0.8}
+    .kpi-card.rag-red::before{background:linear-gradient(90deg,var(--color-negative),#F87171);opacity:0.8}
+    .kpi-card .kpi-icon{font-size:1.3rem;margin-bottom:4px;display:block;opacity:0.85}
+    .kpi-card .kpi-label{
+        font-size:.72rem;font-weight:600;text-transform:uppercase;
+        letter-spacing:0.06em;color:var(--color-text-secondary);margin-bottom:6px;
+    }
+    .kpi-card .kpi-value{
+        font-size:1.6rem;font-weight:800;color:var(--color-text);
+        line-height:1.2;letter-spacing:-0.02em;
+    }
+    .kpi-card .kpi-delta{
+        font-size:.78rem;font-weight:600;margin-top:6px;display:inline-flex;
+        align-items:center;gap:3px;padding:2px 8px;border-radius:20px;
+    }
+    .kpi-card .kpi-delta.positive{color:#4ADE80;background:rgba(34,197,94,0.12)}
+    .kpi-card .kpi-delta.negative{color:#F87171;background:rgba(239,68,68,0.12)}
+    .kpi-card .kpi-delta.neutral{color:var(--color-text-secondary);background:rgba(255,255,255,0.05)}
+
+    /* ── KPI Group (legacy wrapper) ───────────────────────────────── */
+    .kpi-group{
+        background:transparent;border-radius:var(--radius-md);
+        padding:0;margin:8px 0 18px;
+    }
+
+    /* ── Insight Box ───────────────────────────────────────────────── */
+    .insight-box{
+        background:linear-gradient(135deg,rgba(59,130,246,0.06) 0%,rgba(59,130,246,0.02) 100%);
+        border:1px solid rgba(59,130,246,0.18);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:16px 20px;
+        margin:0 0 18px;font-size:.9rem;line-height:1.75;
+        color:#D1D5DB;position:relative;overflow:hidden;
+    }
+    .insight-box::before{
+        content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+        background:linear-gradient(180deg,var(--color-info),#60A5FA);
+        border-radius:4px 0 0 4px;
+    }
+    .insight-box b{color:var(--color-text)}
+
+    /* ── Badges ────────────────────────────────────────────────────── */
+    .badge-good{
+        display:inline-block;background:linear-gradient(135deg,#22C55E,#16A34A);color:#fff;
+        padding:3px 12px;border-radius:20px;font-size:.75rem;font-weight:600;
+        box-shadow:0 2px 6px rgba(34,197,94,0.3);
+    }
+    .badge-bad{
+        display:inline-block;background:linear-gradient(135deg,#EF4444,#DC2626);color:#fff;
+        padding:3px 12px;border-radius:20px;font-size:.75rem;font-weight:600;
+        box-shadow:0 2px 6px rgba(239,68,68,0.3);
+    }
+    .badge-warn{
+        display:inline-block;background:linear-gradient(135deg,#F59E0B,#D97706);color:#fff;
+        padding:3px 12px;border-radius:20px;font-size:.75rem;font-weight:600;
+        box-shadow:0 2px 6px rgba(245,158,11,0.3);
+    }
+
+    /* ── Main Title ────────────────────────────────────────────────── */
+    .main-title{
+        background:linear-gradient(135deg,rgba(30,30,46,0.8) 0%,rgba(26,26,46,0.6) 100%);
+        border:1px solid var(--color-border);backdrop-filter:blur(16px);
+        border-radius:var(--radius-lg);padding:20px 28px;
+        text-align:center;margin-bottom:24px;box-shadow:var(--shadow-md);
+        position:relative;overflow:hidden;
+    }
+    .main-title::before{
+        content:'';position:absolute;top:0;left:0;right:0;height:3px;
+        background:linear-gradient(90deg,var(--color-meta),var(--color-ga4));
+    }
+    .main-title h1{
+        font-size:1.35rem;font-weight:800;letter-spacing:-0.02em;
+        background:linear-gradient(135deg,#FAFAFA 0%,#D1D5DB 100%);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;margin:0 0 6px;
+    }
+    .main-title .subtitle{font-size:.8rem;color:var(--color-text-secondary);margin:0;font-weight:400}
+    .main-title .ic-meta{
+        display:inline-flex;align-items:center;justify-content:center;
+        width:22px;height:22px;border-radius:6px;font-size:.7rem;
+        background:linear-gradient(135deg,#FF6B00,#FF9E45);
+        color:#fff;margin-right:8px;vertical-align:middle;font-weight:800;
+    }
+    .main-title .ic-ga4{
+        display:inline-flex;align-items:center;justify-content:center;
+        width:22px;height:22px;border-radius:6px;font-size:.7rem;
+        background:linear-gradient(135deg,#0EA5E9,#38BDF8);
+        color:#fff;margin-left:8px;vertical-align:middle;font-weight:800;
+    }
+
+    /* ── Alert Boxes ───────────────────────────────────────────────── */
+    .alert-box{
+        background:linear-gradient(135deg,rgba(198,40,40,0.15),rgba(198,40,40,0.08));
+        border:1px solid rgba(198,40,40,0.4);color:#fff;
+        padding:14px 18px;border-radius:var(--radius-md);margin:8px 0;font-weight:600;
+        backdrop-filter:blur(8px);
+    }
+    .alert-box-warn{
+        background:linear-gradient(135deg,rgba(230,81,0,0.15),rgba(230,81,0,0.08));
+        border:1px solid rgba(230,81,0,0.4);color:#fff;
+        padding:14px 18px;border-radius:var(--radius-md);margin:8px 0;font-weight:600;
+        backdrop-filter:blur(8px);
+    }
+
+    /* ── RAG Colors ────────────────────────────────────────────────── */
     .rag-green{color:var(--color-positive);font-weight:700}
     .rag-amber{color:var(--color-warning);font-weight:700}
     .rag-red{color:var(--color-negative);font-weight:700}
-    .kpi-card{background:var(--color-surface);border-radius:10px;padding:14px 18px;margin:6px 0;
-        border-left:4px solid transparent}
-    .kpi-card.rag-border-green{border-left-color:var(--color-positive)}
-    .kpi-card.rag-border-amber{border-left-color:var(--color-warning)}
-    .kpi-card.rag-border-red{border-left-color:var(--color-negative)}
-    .recommendation-box{background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);
-        border-radius:8px;padding:14px 18px;margin:8px 0;font-size:.92rem;line-height:1.7;color:#D1D5DB}
-    .recommendation-box b{color:#FAFAFA}
-    .bottleneck-box{background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.3);
-        border-radius:8px;padding:14px 18px;margin:8px 0;font-size:.92rem;line-height:1.7;color:#D1D5DB}
-    .bottleneck-box b{color:#FAFAFA}
-    .pacing-ok{background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);
-        border-radius:8px;padding:12px 16px;margin:8px 0}
-    .pacing-warn{background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);
-        border-radius:8px;padding:12px 16px;margin:8px 0}
-    .pacing-danger{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);
-        border-radius:8px;padding:12px 16px;margin:8px 0}
-    .cost-inaction{background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);
-        border-radius:8px;padding:14px 18px;margin:8px 0;font-size:.92rem}
+
+    /* ── Recommendation Box ────────────────────────────────────────── */
+    .recommendation-box{
+        background:linear-gradient(135deg,rgba(34,197,94,0.06) 0%,rgba(34,197,94,0.02) 100%);
+        border:1px solid rgba(34,197,94,0.18);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:16px 20px;
+        margin:8px 0;font-size:.9rem;line-height:1.75;color:#D1D5DB;
+        position:relative;overflow:hidden;
+    }
+    .recommendation-box::before{
+        content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+        background:linear-gradient(180deg,var(--color-positive),#4ADE80);
+        border-radius:4px 0 0 4px;
+    }
+    .recommendation-box b{color:var(--color-text)}
+
+    /* ── Bottleneck Box ────────────────────────────────────────────── */
+    .bottleneck-box{
+        background:linear-gradient(135deg,rgba(239,68,68,0.06) 0%,rgba(239,68,68,0.02) 100%);
+        border:1px solid rgba(239,68,68,0.2);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:16px 20px;
+        margin:8px 0;font-size:.9rem;line-height:1.75;color:#D1D5DB;
+        position:relative;overflow:hidden;
+    }
+    .bottleneck-box::before{
+        content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+        background:linear-gradient(180deg,var(--color-negative),#F87171);
+        border-radius:4px 0 0 4px;
+    }
+    .bottleneck-box b{color:var(--color-text)}
+
+    /* ── Pacing Boxes ──────────────────────────────────────────────── */
+    .pacing-ok{
+        background:linear-gradient(135deg,rgba(34,197,94,0.08),rgba(34,197,94,0.03));
+        border:1px solid rgba(34,197,94,0.2);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:14px 18px;margin:8px 0;
+    }
+    .pacing-warn{
+        background:linear-gradient(135deg,rgba(245,158,11,0.08),rgba(245,158,11,0.03));
+        border:1px solid rgba(245,158,11,0.2);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:14px 18px;margin:8px 0;
+    }
+    .pacing-danger{
+        background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(239,68,68,0.03));
+        border:1px solid rgba(239,68,68,0.2);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:14px 18px;margin:8px 0;
+    }
+
+    /* ── Cost of Inaction ──────────────────────────────────────────── */
+    .cost-inaction{
+        background:linear-gradient(135deg,rgba(239,68,68,0.08),rgba(239,68,68,0.03));
+        border:1px solid rgba(239,68,68,0.25);backdrop-filter:blur(8px);
+        border-radius:var(--radius-md);padding:16px 20px;margin:8px 0;font-size:.9rem;
+        position:relative;overflow:hidden;
+    }
+    .cost-inaction::before{
+        content:'';position:absolute;left:0;top:0;bottom:0;width:4px;
+        background:linear-gradient(180deg,var(--color-negative),#F87171);
+        border-radius:4px 0 0 4px;
+    }
+
+    /* ── Tabs Styling ──────────────────────────────────────────────── */
+    .stTabs [data-baseweb="tab-list"]{
+        background:rgba(26,26,46,0.5);border-radius:var(--radius-md);
+        padding:4px;gap:4px;border:1px solid var(--color-border);
+    }
+    .stTabs [data-baseweb="tab"]{
+        border-radius:var(--radius-sm)!important;padding:8px 20px!important;
+        font-weight:600!important;font-size:.85rem!important;
+        color:var(--color-text-secondary)!important;
+        transition:all 0.2s ease!important;
+        background:transparent!important;border:none!important;
+    }
+    .stTabs [data-baseweb="tab"]:hover{
+        color:var(--color-text)!important;
+        background:rgba(255,255,255,0.04)!important;
+    }
+    .stTabs [aria-selected="true"]{
+        background:linear-gradient(135deg,rgba(255,107,0,0.15),rgba(255,107,0,0.08))!important;
+        color:var(--color-text)!important;
+        box-shadow:0 2px 8px rgba(255,107,0,0.15)!important;
+    }
+    .stTabs [data-baseweb="tab-highlight"]{display:none!important}
+    .stTabs [data-baseweb="tab-border"]{display:none!important}
+
+    /* ── Sidebar ───────────────────────────────────────────────────── */
+    [data-testid="stSidebar"]{
+        background:linear-gradient(180deg,#12121f 0%,#0E1117 100%)!important;
+        border-right:1px solid var(--color-border)!important;
+    }
+    [data-testid="stSidebar"] .stButton>button{
+        border-radius:var(--radius-sm)!important;font-weight:600!important;
+        transition:all 0.2s ease!important;border:1px solid var(--color-border)!important;
+    }
+    [data-testid="stSidebar"] .stButton>button:hover{
+        border-color:rgba(255,107,0,0.4)!important;
+        box-shadow:0 2px 8px rgba(255,107,0,0.15)!important;
+    }
+
+    /* ── Dataframe / Table Styling ─────────────────────────────────── */
+    [data-testid="stDataFrame"]{
+        border-radius:var(--radius-md)!important;overflow:hidden;
+        border:1px solid var(--color-border)!important;
+    }
+
+    /* ── Expander Styling ──────────────────────────────────────────── */
+    .streamlit-expanderHeader{
+        font-weight:600!important;font-size:.9rem!important;
+        border-radius:var(--radius-sm)!important;
+    }
+
+    /* ── Download Button ───────────────────────────────────────────── */
+    .stDownloadButton>button{
+        border-radius:var(--radius-sm)!important;font-weight:600!important;
+        border:1px solid var(--color-border)!important;
+        transition:all 0.2s ease!important;
+    }
+    .stDownloadButton>button:hover{
+        border-color:rgba(255,107,0,0.4)!important;
+        box-shadow:0 2px 8px rgba(255,107,0,0.15)!important;
+    }
+
+    /* ── Form Submit Button ────────────────────────────────────────── */
+    [data-testid="stForm"] .stButton>button[kind="primaryFormSubmit"]{
+        background:linear-gradient(135deg,#FF6B00,#FF8C00)!important;
+        color:#fff!important;border:none!important;font-weight:700!important;
+        border-radius:var(--radius-sm)!important;
+        box-shadow:0 4px 12px rgba(255,107,0,0.3)!important;
+        transition:all 0.2s ease!important;
+    }
+    [data-testid="stForm"] .stButton>button[kind="primaryFormSubmit"]:hover{
+        box-shadow:0 6px 20px rgba(255,107,0,0.4)!important;
+        transform:translateY(-1px)!important;
+    }
+
+    /* ── Sidebar Branding ──────────────────────────────────────────── */
+    .sidebar-brand{
+        text-align:center;padding:16px 12px 20px;
+        border-bottom:1px solid var(--color-border);margin-bottom:12px;
+    }
+    .sidebar-brand .brand-logo{
+        font-size:1.6rem;font-weight:800;letter-spacing:-0.03em;
+        background:linear-gradient(135deg,var(--color-meta),#FF9E45);
+        -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+        background-clip:text;
+    }
+    .sidebar-brand .brand-sub{
+        font-size:.72rem;color:var(--color-text-secondary);
+        text-transform:uppercase;letter-spacing:0.1em;margin-top:2px;
+    }
+
+    /* ── Status Badge (Live) ───────────────────────────────────────── */
+    .status-live{
+        display:inline-flex;align-items:center;gap:6px;
+        background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.25);
+        padding:3px 12px;border-radius:20px;font-size:.72rem;font-weight:600;
+        color:#4ADE80;
+    }
+    .status-live .dot{
+        width:6px;height:6px;border-radius:50%;background:#4ADE80;
+        animation:pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot{
+        0%,100%{opacity:1;transform:scale(1)}
+        50%{opacity:0.5;transform:scale(0.8)}
+    }
+
+    /* ── Hide default metric styling (replaced by kpi_card) ──────── */
+    [data-testid="stMetricValue"]{font-size:1.6rem!important;font-weight:800!important;letter-spacing:-0.02em!important}
+    [data-testid="stMetricLabel"]{font-size:.72rem!important;color:var(--color-text-secondary)!important;text-transform:uppercase!important;letter-spacing:0.05em!important;font-weight:600!important}
+    [data-testid="stMetricDelta"]{font-size:.78rem!important;font-weight:600!important}
+
+    /* ── Preset Buttons ────────────────────────────────────────────── */
+    .preset-btn button{font-size:.78rem!important;padding:4px 8px!important}
 </style>
 """, unsafe_allow_html=True)
 
 H = lambda text, cls="": f'<div class="section-header {cls}">{text}</div>'
+
+
+def kpi_card(label, value, delta=None, icon=None, rag=None, delta_inverse=False):
+    """Render a professional KPI card as HTML."""
+    rag_cls = f" rag-{rag}" if rag and rag in ("green", "amber", "red") else ""
+    icon_html = f'<span class="kpi-icon">{icon}</span>' if icon else ""
+
+    delta_html = ""
+    if delta is not None:
+        ds = str(delta)
+        if ds.startswith("+"):
+            if delta_inverse:
+                dcls = "negative"
+                arrow = "&#9650;"
+            else:
+                dcls = "positive"
+                arrow = "&#9650;"
+        elif ds.startswith("-"):
+            if delta_inverse:
+                dcls = "positive"
+                arrow = "&#9660;"
+            else:
+                dcls = "negative"
+                arrow = "&#9660;"
+        else:
+            dcls = "neutral"
+            arrow = ""
+        delta_html = f'<span class="kpi-delta {dcls}">{arrow} {ds}</span>'
+
+    return (
+        f'<div class="kpi-card{rag_cls}">'
+        f'{icon_html}'
+        f'<div class="kpi-label">{label}</div>'
+        f'<div class="kpi-value">{value}</div>'
+        f'{delta_html}'
+        f'</div>'
+    )
+
+
+def kpi_row(cards_html):
+    """Wrap KPI cards in a responsive grid."""
+    return f'<div class="kpi-grid">{"".join(cards_html)}</div>'
+
 
 _title_placeholder = st.empty()
 
@@ -377,6 +742,13 @@ _title_placeholder = st.empty()
 #  SIDEBAR — SEARCH FORM (batched — no reload until "Buscar" is clicked)
 # ═══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
+    st.markdown(
+        '<div class="sidebar-brand">'
+        '<div class="brand-logo">Meta Dashboard</div>'
+        '<div class="brand-sub">Analytics &amp; Performance</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     api_key = st.text_input(
         "Windsor.ai API Key",
         value=os.getenv("WINDSOR_API_KEY", ""),
@@ -464,14 +836,14 @@ if "camp" not in st.session_state:
     st.stop()
 
 with st.sidebar:
-    st.markdown("---")
+    st.markdown('<div style="border-top:1px solid rgba(255,255,255,0.06);margin:8px 0 12px"></div>', unsafe_allow_html=True)
     obj_mode = st.radio(
         "Tipo de Campanha",
         ["Todas", "Conversão (Vendas)", "Topo de Funil (Alcance/Engajamento)"],
         help="Filtra campanhas pelo objetivo e adapta métricas.",
     )
-    st.markdown("---")
-    st.subheader("Metas & Orçamento")
+    st.markdown('<div style="border-top:1px solid rgba(255,255,255,0.06);margin:8px 0 12px"></div>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:.85rem;font-weight:700;color:#FAFAFA;margin:0 0 8px;letter-spacing:-0.01em">🎯 Metas & Orçamento</p>', unsafe_allow_html=True)
     monthly_budget = st.number_input(
         "Orçamento Mensal (R$)", min_value=0.0, value=0.0, step=500.0,
         help="Defina o orçamento mensal para acompanhar o pacing.",
@@ -722,8 +1094,10 @@ _acct_label = sel_account if sel_account != "Todas as contas" else "Todas as con
 _camp_label = sel_campaign if sel_campaign != "Todas" else "Todas as campanhas"
 _title_placeholder.markdown(
     f'<div class="main-title">'
-    f'<h1><span class="ic-meta">&#9632;</span> PAINEL DE PERFORMANCE — META ADS + GA4 <span class="ic-ga4">&#9632;</span></h1>'
-    f'<p class="subtitle">{date_from.strftime("%d %b %Y")} — {date_to.strftime("%d %b %Y")} · '
+    f'<h1><span class="ic-meta">M</span> PAINEL DE PERFORMANCE — META ADS + GA4 <span class="ic-ga4">G4</span></h1>'
+    f'<p class="subtitle">'
+    f'<span class="status-live"><span class="dot"></span>Live</span> '
+    f'{date_from.strftime("%d %b %Y")} — {date_to.strftime("%d %b %Y")} · '
     f'Conta: {_acct_label} · {_camp_label}</p></div>',
     unsafe_allow_html=True,
 )
@@ -846,46 +1220,49 @@ with tab_overview:
     )
 
     # ── KPIs Tier 1 (max 6 — cognitive load research) ────────────────────
+    _roas_rag_s = rag_status(roas, target_roas) if target_roas > 0 else None
+    _cpa_rag_s = rag_status(cpa, target_cpa, inverse=True) if target_cpa > 0 else None
+
     if is_conv or obj_mode == "Todas":
         st.markdown(H("KPIs Estratégicos"), unsafe_allow_html=True)
-        st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("Valor Gasto", brl(total_spend), delta=_delta_str(d_spend))
-        c2.metric("ROAS", fmt_dec(roas, suffix="x"), delta=_delta_str(d_roas))
-        c3.metric("CPA", brl(cpa), delta=_delta_str(d_cpa), delta_color="inverse")
-        c4.metric("Conversões", fmt_int(total_purch), delta=_delta_str(d_purch))
-        c5.metric("Receita", brl(total_rev), delta=_delta_str(d_rev))
-        c6.metric("CTR", fmt_pct(ctr), delta=_delta_str(d_ctr))
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi_card("Valor Gasto", brl(total_spend), _delta_str(d_spend), "💰"),
+            kpi_card("ROAS", fmt_dec(roas, suffix="x"), _delta_str(d_roas), "📈", _roas_rag_s),
+            kpi_card("CPA", brl(cpa), _delta_str(d_cpa), "🎯", _cpa_rag_s, delta_inverse=True),
+            kpi_card("Conversões", fmt_int(total_purch), _delta_str(d_purch), "🛒"),
+            kpi_card("Receita", brl(total_rev), _delta_str(d_rev), "💎"),
+            kpi_card("CTR", fmt_pct(ctr), _delta_str(d_ctr), "👆"),
+        ]), unsafe_allow_html=True)
 
         with st.expander("📋 KPIs Secundários"):
-            c1, c2, c3, c4, c5, c6 = st.columns(6)
-            c1.metric("Impressões", fmt_int(total_imp), delta=_delta_str(d_imp))
-            c2.metric("Cliques", fmt_int(total_clicks), delta=_delta_str(d_clicks))
-            c3.metric("CPC", brl(cpc), delta=_delta_str(d_cpc), delta_color="inverse")
-            c4.metric("CPM", brl(cpm), delta=_delta_str(d_cpm), delta_color="inverse")
-            c5.metric("Ticket Médio", brl(ticket_medio))
-            c6.metric("Frequência", fmt_dec(avg_freq, 1))
+            st.markdown(kpi_row([
+                kpi_card("Impressões", fmt_int(total_imp), _delta_str(d_imp), "👁️"),
+                kpi_card("Cliques", fmt_int(total_clicks), _delta_str(d_clicks), "🖱️"),
+                kpi_card("CPC", brl(cpc), _delta_str(d_cpc), "💵", delta_inverse=True),
+                kpi_card("CPM", brl(cpm), _delta_str(d_cpm), "📊", delta_inverse=True),
+                kpi_card("Ticket Médio", brl(ticket_medio), icon="🧾"),
+                kpi_card("Frequência", fmt_dec(avg_freq, 1), icon="🔄"),
+            ]), unsafe_allow_html=True)
 
     if is_tofu:
         st.markdown(H("KPIs Estratégicos", "sh-blue"), unsafe_allow_html=True)
-        st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("Valor Gasto", brl(total_spend), delta=_delta_str(d_spend))
-        c2.metric("Alcance", fmt_int(total_reach), delta=_delta_str(d_reach))
-        c3.metric("CPM", brl(cpm), delta=_delta_str(d_cpm), delta_color="inverse")
-        c4.metric("CTR", fmt_pct(ctr), delta=_delta_str(d_ctr))
-        c5.metric("Engajamento", fmt_int(total_engagement), delta=_delta_str(d_eng))
-        c6.metric("Custo/Engajamento", brl(cost_per_eng), delta=_delta_str(d_cost_eng), delta_color="inverse")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi_card("Valor Gasto", brl(total_spend), _delta_str(d_spend), "💰"),
+            kpi_card("Alcance", fmt_int(total_reach), _delta_str(d_reach), "📡"),
+            kpi_card("CPM", brl(cpm), _delta_str(d_cpm), "📊", delta_inverse=True),
+            kpi_card("CTR", fmt_pct(ctr), _delta_str(d_ctr), "👆"),
+            kpi_card("Engajamento", fmt_int(total_engagement), _delta_str(d_eng), "❤️"),
+            kpi_card("Custo/Engajamento", brl(cost_per_eng), _delta_str(d_cost_eng), "💵", delta_inverse=True),
+        ]), unsafe_allow_html=True)
 
         with st.expander("📋 KPIs Secundários"):
-            c1, c2, c3, c4, c5 = st.columns(5)
-            c1.metric("Impressões", fmt_int(total_imp), delta=_delta_str(d_imp))
-            c2.metric("Cliques", fmt_int(total_clicks), delta=_delta_str(d_clicks))
-            c3.metric("CPC", brl(cpc), delta=_delta_str(d_cpc), delta_color="inverse")
-            c4.metric("Frequência", fmt_dec(avg_freq, 1))
-            c5.metric("CPR (custo/1k alcance)", brl(cpr), delta=_delta_str(d_cpr), delta_color="inverse")
+            st.markdown(kpi_row([
+                kpi_card("Impressões", fmt_int(total_imp), _delta_str(d_imp), "👁️"),
+                kpi_card("Cliques", fmt_int(total_clicks), _delta_str(d_clicks), "🖱️"),
+                kpi_card("CPC", brl(cpc), _delta_str(d_cpc), "💵", delta_inverse=True),
+                kpi_card("Frequência", fmt_dec(avg_freq, 1), icon="🔄"),
+                kpi_card("CPR (custo/1k alcance)", brl(cpr), _delta_str(d_cpr), "📡", delta_inverse=True),
+            ]), unsafe_allow_html=True)
 
     # ── Smart Insights (gerados automaticamente) ─────────────────────────
     _auto_insights = _generate_smart_insights(
@@ -931,7 +1308,7 @@ with tab_overview:
         fig.update_layout(
             **CHART_DEFAULTS, height=350,
             margin=dict(l=10, r=10, t=10, b=10),
-            yaxis=dict(title="Spend (R$)", showgrid=True, gridcolor="#333"),
+            yaxis=dict(title="Spend (R$)", showgrid=True, gridcolor="rgba(255,255,255,0.06)"),
             yaxis2=dict(title="CTR (%)", overlaying="y", side="right", showgrid=False),
             xaxis=dict(showgrid=False),
             legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
@@ -1157,17 +1534,17 @@ with tab_funnel:
 
     with col_rates:
         st.markdown(H("Taxas entre Etapas", "sh-green"), unsafe_allow_html=True)
+        _rate_cards = []
         for i in range(1, len(funnel_data)):
             prev_label, prev_val = funnel_data[i - 1]
             curr_label, curr_val = funnel_data[i]
             rate = safe_div(curr_val, prev_val, 100)
             drop = 100 - rate
-            st.metric(
-                f"{prev_label} → {curr_label}",
-                f"{rate:.1f}%",
-                delta=f"-{drop:.1f}% drop" if drop > 0 else "0%",
-                delta_color="inverse",
-            )
+            _d = f"-{drop:.1f}% drop" if drop > 0 else "0%"
+            _rate_cards.append(kpi_card(
+                f"{prev_label} → {curr_label}", f"{rate:.1f}%", _d, "🔻", delta_inverse=True,
+            ))
+        st.markdown("".join(_rate_cards), unsafe_allow_html=True)
 
     # ── Funnel by campaign ───────────────────────────────────────────────
     st.markdown(H("Funil por Campanha", "sh-green"), unsafe_allow_html=True)
@@ -1254,24 +1631,24 @@ def _render_creative_card(row, rank: int | None = None, badge: str = ""):
             st.caption(f"**Copy:** {body[:200]}{'…' if len(body) > 200 else ''}")
 
     with col_metrics:
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Spend", brl(row.get('spend', 0)))
-        m2.metric("Impressões", fmt_int(row.get('impressions', 0)))
-        m3.metric("Cliques", fmt_int(row.get('clicks', 0)))
-        m4.metric("CTR", fmt_pct(row.get('CTR', 0)))
-
-        m5, m6, m7, m8 = st.columns(4)
-        m5.metric("Conversões", fmt_int(row.get('purchases', 0)))
-        m6.metric("CPA", brl(row.get('CPA', 0)))
-        m7.metric("ROAS", fmt_dec(row.get('ROAS', 0), suffix="x"))
-        m8.metric("Engajamento", fmt_int(row.get('engagement', 0)))
-
+        _cr_cards = [
+            kpi_card("Spend", brl(row.get('spend', 0)), icon="💰"),
+            kpi_card("Impressões", fmt_int(row.get('impressions', 0)), icon="👁️"),
+            kpi_card("Cliques", fmt_int(row.get('clicks', 0)), icon="🖱️"),
+            kpi_card("CTR", fmt_pct(row.get('CTR', 0)), icon="👆"),
+            kpi_card("Conversões", fmt_int(row.get('purchases', 0)), icon="🛒"),
+            kpi_card("CPA", brl(row.get('CPA', 0)), icon="🎯"),
+            kpi_card("ROAS", fmt_dec(row.get('ROAS', 0), suffix="x"), icon="📈"),
+            kpi_card("Engajamento", fmt_int(row.get('engagement', 0)), icon="❤️"),
+        ]
         if row.get("Hook Rate", 0) > 0 or row.get("Hold Rate", 0) > 0:
-            m9, m10, m11, m12 = st.columns(4)
-            m9.metric("Hook Rate", fmt_pct(row.get('Hook Rate', 0)))
-            m10.metric("Hold Rate", fmt_pct(row.get('Hold Rate', 0)))
-            m11.metric("Video Views", fmt_int(row.get('vv', 0)))
-            m12.metric("Frequência", fmt_dec(row.get('avg_freq', 0), 1))
+            _cr_cards.extend([
+                kpi_card("Hook Rate", fmt_pct(row.get('Hook Rate', 0)), icon="🪝"),
+                kpi_card("Hold Rate", fmt_pct(row.get('Hold Rate', 0)), icon="⏱️"),
+                kpi_card("Video Views", fmt_int(row.get('vv', 0)), icon="🎬"),
+                kpi_card("Frequência", fmt_dec(row.get('avg_freq', 0), 1), icon="🔄"),
+            ])
+        st.markdown(kpi_row(_cr_cards), unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -1339,11 +1716,12 @@ with tab_creative:
 
         # ── KPIs de Vídeo ────────────────────────────────────────────────
         st.markdown(H("Performance de Vídeo", "sh-purple"), unsafe_allow_html=True)
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Video Views", fmt_int(total_vv))
-        c2.metric("ThruPlay", fmt_int(total_thruplay))
-        c3.metric("Hook Rate (views/imp)", fmt_pct(hook_rate))
-        c4.metric("Hold Rate (thru/views)", fmt_pct(hold_rate))
+        st.markdown(kpi_row([
+            kpi_card("Video Views", fmt_int(total_vv), icon="🎬"),
+            kpi_card("ThruPlay", fmt_int(total_thruplay), icon="▶️"),
+            kpi_card("Hook Rate (views/imp)", fmt_pct(hook_rate), icon="🪝"),
+            kpi_card("Hold Rate (thru/views)", fmt_pct(hold_rate), icon="⏱️"),
+        ]), unsafe_allow_html=True)
 
         # ── Winners — Best ROAS with conversions ─────────────────────────
         winners = ca[ca["purchases"] > 0].nsmallest(3, "CPA")
@@ -1685,15 +2063,14 @@ with tab_audience:
         ga4_bounce = _ga4_weighted_mean(ga4_traffic, "bounceRate")
         ga4_engage = _ga4_weighted_mean(ga4_traffic, "engagementRate")
 
-        st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        c1.metric("Sessões", fmt_int(ga4_sessions))
-        c2.metric("Usuários", fmt_int(ga4_users))
-        c3.metric("Novos Usuários", fmt_int(ga4_new_users))
-        c4.metric("Pageviews", fmt_int(ga4_pvs))
-        c5.metric("Bounce Rate", fmt_pct(ga4_bounce))
-        c6.metric("Engagement Rate", fmt_pct(ga4_engage))
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi_card("Sessões", fmt_int(ga4_sessions), icon="🌐"),
+            kpi_card("Usuários", fmt_int(ga4_users), icon="👤"),
+            kpi_card("Novos Usuários", fmt_int(ga4_new_users), icon="🆕"),
+            kpi_card("Pageviews", fmt_int(ga4_pvs), icon="📄"),
+            kpi_card("Bounce Rate", fmt_pct(ga4_bounce), icon="↩️"),
+            kpi_card("Engagement Rate", fmt_pct(ga4_engage), icon="⚡"),
+        ]), unsafe_allow_html=True)
 
         # GA4 daily trend
         ga4_daily = _get_ga4_daily()
@@ -1729,7 +2106,7 @@ with tab_audience:
             fig.update_layout(
                 **CHART_DEFAULTS, height=350,
                 margin=dict(l=10, r=10, t=10, b=10),
-                yaxis=dict(title="Sessões", showgrid=True, gridcolor="#333"),
+                yaxis=dict(title="Sessões", showgrid=True, gridcolor="rgba(255,255,255,0.06)"),
                 yaxis2=dict(title="Engagement Rate (%)", overlaying="y", side="right", showgrid=False),
                 legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
             )
@@ -1810,14 +2187,13 @@ with tab_audience:
             f'</div>', unsafe_allow_html=True,
         )
 
-        st.markdown('<div class="kpi-group">', unsafe_allow_html=True)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Sessões Pagas GA4", fmt_int(paid_sessions))
-        c2.metric("Custo/Sessão", brl(cost_per_session))
-        c3.metric("Conversões GA4", fmt_int(paid_conv))
-        c4.metric("CPA (GA4)", brl(safe_div(total_spend, paid_conv)))
-        c5.metric("ROAS (GA4)", fmt_dec(safe_div(paid_rev, total_spend), suffix="x"))
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(kpi_row([
+            kpi_card("Sessões Pagas GA4", fmt_int(paid_sessions), icon="🌐"),
+            kpi_card("Custo/Sessão", brl(cost_per_session), icon="💵"),
+            kpi_card("Conversões GA4", fmt_int(paid_conv), icon="🛒"),
+            kpi_card("CPA (GA4)", brl(safe_div(total_spend, paid_conv)), icon="🎯"),
+            kpi_card("ROAS (GA4)", fmt_dec(safe_div(paid_rev, total_spend), suffix="x"), icon="📈"),
+        ]), unsafe_allow_html=True)
 
         # Cross-channel campaign comparison
         with st.expander("📋 Comparativo por Campanha — Meta vs GA4"):
@@ -2438,7 +2814,7 @@ def _generate_pdf():
         ))
         fig.update_layout(
             height=350,
-            yaxis=dict(title="Spend (R$)", showgrid=True, gridcolor="#333"),
+            yaxis=dict(title="Spend (R$)", showgrid=True, gridcolor="rgba(255,255,255,0.06)"),
             yaxis2=dict(title="CTR (%)", overlaying="y", side="right", showgrid=False),
             xaxis=dict(showgrid=False),
             legend=dict(orientation="h", y=-0.15, xanchor="center", x=0.5),
@@ -2859,7 +3235,7 @@ def _generate_pdf():
             ))
             fig.update_layout(
                 height=350,
-                yaxis=dict(title="Sessoes", showgrid=True, gridcolor="#333"),
+                yaxis=dict(title="Sessoes", showgrid=True, gridcolor="rgba(255,255,255,0.06)"),
                 yaxis2=dict(title="Engagement Rate (%)", overlaying="y",
                             side="right", showgrid=False),
                 xaxis=dict(showgrid=False),
@@ -2970,7 +3346,8 @@ def _generate_pdf():
 
 # ── Sidebar: PDF button ──────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("---")
+    st.markdown('<div style="border-top:1px solid rgba(255,255,255,0.06);margin:8px 0 12px"></div>', unsafe_allow_html=True)
+    st.markdown('<p style="font-size:.85rem;font-weight:700;color:#FAFAFA;margin:0 0 8px;letter-spacing:-0.01em">📄 Exportar</p>', unsafe_allow_html=True)
     if st.button("Gerar Relatorio PDF", use_container_width=True):
         with st.spinner("Gerando relatorio PDF..."):
             try:
