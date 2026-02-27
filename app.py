@@ -2419,14 +2419,6 @@ PDF_CHART_LAYOUT = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="Inter, Arial, sans-serif", color="white", size=11),
     margin=dict(l=50, r=30, t=30, b=40),
-    xaxis=dict(gridcolor="rgba(255,255,255,0.06)", gridwidth=1),
-    yaxis=dict(gridcolor="rgba(255,255,255,0.06)", gridwidth=1),
-    hoverlabel=dict(
-        bgcolor="#1A1A2E",
-        font_color="white",
-        font_size=12,
-        bordercolor="rgba(255,255,255,0.1)",
-    ),
 )
 
 
@@ -2583,10 +2575,10 @@ def _generate_pdf():
             img = fig.to_image(format="png", width=900, height=h, scale=2)
             buf = io.BytesIO(img)
             pdf.image(buf, x=(pdf.w - w) / 2, w=w)
-        except Exception:
+        except Exception as _chart_err:
             pdf.set_font("Inter", "I", 9)
             pdf.set_text_color(*_GR)
-            pdf.cell(0, 8, "[Gr\u00e1fico indispon\u00edvel \u2014 instale kaleido]",
+            pdf.cell(0, 8, f"[Gráfico indisponível: {_chart_err}]",
                      new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
             pdf.set_text_color(*_WH)
 
