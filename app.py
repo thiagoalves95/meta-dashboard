@@ -121,7 +121,7 @@ def rag_html(status):
 
 
 def _generate_smart_insights(total_spend, roas, cpa, ctr, avg_freq, total_purch,
-                              target_roas, target_cpa, monthly_budget, d_roas, d_cpa):
+                              target_roas, target_cpa, monthly_budget):
     """Generate automatic actionable insights based on data."""
     insights = []
 
@@ -152,13 +152,6 @@ def _generate_smart_insights(total_spend, roas, cpa, ctr, avg_freq, total_purch,
         insights.append(f"⚠️ CTR de **{fmt_pct(ctr)}** abaixo de 1%. Revise copywriting, headlines e criativos.")
     elif ctr > 3.0:
         insights.append(f"✅ CTR de **{fmt_pct(ctr)}** excelente (acima de 3%). Os criativos estão gerando alto engajamento.")
-
-    # Trend analysis
-    if d_roas is not None:
-        if d_roas < -20:
-            insights.append(f"📉 ROAS caiu **{abs(d_roas):.1f}%** vs período anterior. Investigue criativos saturados e mudanças no público.")
-        elif d_roas > 20:
-            insights.append(f"📈 ROAS subiu **{d_roas:.1f}%** vs período anterior. Identifique o que está funcionando e escale.")
 
     return insights
 
@@ -275,37 +268,6 @@ def _add_annotations(fig, x_series, y_series, fmt_fn=None):
         annotation_font_color="#9CA3AF", annotation_font_size=10,
     )
 
-
-def _delta_pct(curr, prev):
-    """Compute percentage change; returns None if previous is 0."""
-    if not prev:
-        return None
-    return (curr - prev) / prev * 100
-
-
-def _delta_str(val):
-    """Format delta as string for st.metric."""
-    if val is None:
-        return None
-    return f"{val:+.1f}%"
-
-
-def _insight_badge(val, good_threshold, bad_threshold, inverse=False):
-    """Return HTML badge based on thresholds."""
-    if val is None:
-        return ""
-    if inverse:
-        if val <= good_threshold:
-            return '<span class="badge-good">Bom</span>'
-        elif val >= bad_threshold:
-            return '<span class="badge-bad">Ruim</span>'
-        return '<span class="badge-warn">Atenção</span>'
-    else:
-        if val >= good_threshold:
-            return '<span class="badge-good">Bom</span>'
-        elif val <= bad_threshold:
-            return '<span class="badge-bad">Ruim</span>'
-        return '<span class="badge-warn">Atenção</span>'
 
 
 def _to_csv(df):
@@ -694,39 +656,16 @@ st.markdown("""
 H = lambda text, cls="": f'<div class="section-header {cls}">{text}</div>'
 
 
-def kpi_card(label, value, delta=None, icon=None, rag=None, delta_inverse=False):
+def kpi_card(label, value, icon=None, rag=None):
     """Render a professional KPI card as HTML."""
     rag_cls = f" rag-{rag}" if rag and rag in ("green", "amber", "red") else ""
     icon_html = f'<span class="kpi-icon">{icon}</span>' if icon else ""
-
-    delta_html = ""
-    if delta is not None:
-        ds = str(delta)
-        if ds.startswith("+"):
-            if delta_inverse:
-                dcls = "negative"
-                arrow = "&#9650;"
-            else:
-                dcls = "positive"
-                arrow = "&#9650;"
-        elif ds.startswith("-"):
-            if delta_inverse:
-                dcls = "positive"
-                arrow = "&#9660;"
-            else:
-                dcls = "negative"
-                arrow = "&#9660;"
-        else:
-            dcls = "neutral"
-            arrow = ""
-        delta_html = f'<span class="kpi-delta {dcls}">{arrow} {ds}</span>'
 
     return (
         f'<div class="kpi-card{rag_cls}">'
         f'{icon_html}'
         f'<div class="kpi-label">{label}</div>'
         f'<div class="kpi-value">{value}</div>'
-        f'{delta_html}'
         f'</div>'
     )
 
@@ -805,20 +744,11 @@ if fetch:
         progress.progress(0.60, text="Carregando anúncios / criativos…")
         ad = c.get_ad_data(dfrom, dto, acct)
 
-        progress.progress(0.80, text="Carregando período anterior…")
-        _period_days = (date_to - date_from).days
-        _prev_to = date_from - timedelta(days=1)
-        _prev_from = _prev_to - timedelta(days=_period_days)
-        try:
-            camp_prev = c.get_campaign_data(str(_prev_from), str(_prev_to), acct)
-        except Exception:
-            camp_prev = pd.DataFrame()
-
         progress.progress(1.0, text="Dados carregados!")
         progress.empty()
 
         st.session_state.update(
-            camp=camp, adset=adset, ad=ad, camp_prev=camp_prev,
+            camp=camp, adset=adset, ad=ad,
             _data_loaded=True,
             # Clear lazy caches so they reload on next access
             _demo=None, _placement=None, _region=None,
@@ -1056,38 +986,6 @@ hold_rate = safe_div(total_thruplay, total_vv, 100)
 is_conv = obj_mode == "Conversão (Vendas)"
 is_tofu = obj_mode == "Topo de Funil (Alcance/Engajamento)"
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  PREVIOUS-PERIOD DELTAS
-# ═══════════════════════════════════════════════════════════════════════════════
-_has_prev = "camp_prev" in st.session_state and not st.session_state["camp_prev"].empty
-if _has_prev:
-    _df_prev = _classify(st.session_state["camp_prev"].copy())
-    if obj_mode != "Todas":
-        _df_prev = _df_prev[_df_prev["_cat"] == obj_mode]
-    _SP = lambda c: col_sum(_df_prev, c)
-    _p_imp = _SP("impressions"); _p_clicks = _SP("clicks"); _p_spend = _SP("spend")
-    _p_reach = _SP("reach"); _p_purch = _SP("actions_purchase")
-    _p_rev = _SP("action_values_purchase"); _p_leads = _SP("actions_lead")
-    _p_eng = _SP("actions_post_engagement"); _p_vv = _SP("video_views")
-    _p_ctr = safe_div(_p_clicks, _p_imp, 100)
-    _p_cpc = safe_div(_p_spend, _p_clicks)
-    _p_cpm = safe_div(_p_spend, _p_imp, 1000)
-    _p_cpa = safe_div(_p_spend, _p_purch)
-    _p_roas = safe_div(_p_rev, _p_spend)
-    _p_cpl = safe_div(_p_spend, _p_leads)
-    _p_cpr = safe_div(_p_spend, _p_reach, 1000)
-    _p_cost_eng = safe_div(_p_spend, _p_eng)
-    d_imp = _delta_pct(total_imp, _p_imp); d_clicks = _delta_pct(total_clicks, _p_clicks)
-    d_spend = _delta_pct(total_spend, _p_spend); d_reach = _delta_pct(total_reach, _p_reach)
-    d_ctr = _delta_pct(ctr, _p_ctr); d_cpc = _delta_pct(cpc, _p_cpc)
-    d_cpm = _delta_pct(cpm, _p_cpm); d_cpa = _delta_pct(cpa, _p_cpa)
-    d_roas = _delta_pct(roas, _p_roas); d_purch = _delta_pct(total_purch, _p_purch)
-    d_rev = _delta_pct(total_rev, _p_rev); d_cpl = _delta_pct(cpl, _p_cpl)
-    d_cpr = _delta_pct(cpr, _p_cpr); d_cost_eng = _delta_pct(cost_per_eng, _p_cost_eng)
-    d_eng = _delta_pct(total_engagement, _p_eng)
-else:
-    d_imp = d_clicks = d_spend = d_reach = d_ctr = d_cpc = d_cpm = d_cpa = None
-    d_roas = d_purch = d_rev = d_cpl = d_cpr = d_cost_eng = d_eng = None
 
 # ── Dynamic title ────────────────────────────────────────────────────────────
 _acct_label = sel_account if sel_account != "Todas as contas" else "Todas as contas"
@@ -1206,13 +1104,10 @@ with tab_overview:
     # ── Insight Box com RAG ──────────────────────────────────────────────
     _roas_rag = rag_html(rag_status(roas, target_roas)) if target_roas > 0 else ""
     _cpa_rag = rag_html(rag_status(cpa, target_cpa, inverse=True)) if target_cpa > 0 else ""
-    _roas_badge = _insight_badge(d_roas, 0, 0) if d_roas is not None else ""
-    _prev_txt = f" {_roas_badge} vs período anterior" if d_roas is not None else ""
-
     st.markdown(
         f'<div class="insight-box">'
         f'Investimento de <b>{brl(total_spend)}</b> no período · '
-        f'ROAS: {_roas_rag} <b>{fmt_dec(roas, suffix="x")}</b>{_prev_txt}<br>'
+        f'ROAS: {_roas_rag} <b>{fmt_dec(roas, suffix="x")}</b><br>'
         f'CPA: {_cpa_rag} <b>{brl(cpa)}</b> · '
         f'<b>{_n_camps}</b> campanhas · CTR: <b>{fmt_pct(ctr)}</b> · '
         f'Frequência: <b>{fmt_dec(avg_freq, 1)}</b>'
@@ -1226,20 +1121,20 @@ with tab_overview:
     if is_conv or obj_mode == "Todas":
         st.markdown(H("KPIs Estratégicos"), unsafe_allow_html=True)
         st.markdown(kpi_row([
-            kpi_card("Valor Gasto", brl(total_spend), _delta_str(d_spend), "💰"),
-            kpi_card("ROAS", fmt_dec(roas, suffix="x"), _delta_str(d_roas), "📈", _roas_rag_s),
-            kpi_card("CPA", brl(cpa), _delta_str(d_cpa), "🎯", _cpa_rag_s, delta_inverse=True),
-            kpi_card("Conversões", fmt_int(total_purch), _delta_str(d_purch), "🛒"),
-            kpi_card("Receita", brl(total_rev), _delta_str(d_rev), "💎"),
-            kpi_card("CTR", fmt_pct(ctr), _delta_str(d_ctr), "👆"),
+            kpi_card("Valor Gasto", brl(total_spend), icon="💰"),
+            kpi_card("ROAS", fmt_dec(roas, suffix="x"), icon="📈", rag=_roas_rag_s),
+            kpi_card("CPA", brl(cpa), icon="🎯", rag=_cpa_rag_s),
+            kpi_card("Conversões", fmt_int(total_purch), icon="🛒"),
+            kpi_card("Receita", brl(total_rev), icon="💎"),
+            kpi_card("CTR", fmt_pct(ctr), icon="👆"),
         ]), unsafe_allow_html=True)
 
         with st.expander("📋 KPIs Secundários"):
             st.markdown(kpi_row([
-                kpi_card("Impressões", fmt_int(total_imp), _delta_str(d_imp), "👁️"),
-                kpi_card("Cliques", fmt_int(total_clicks), _delta_str(d_clicks), "🖱️"),
-                kpi_card("CPC", brl(cpc), _delta_str(d_cpc), "💵", delta_inverse=True),
-                kpi_card("CPM", brl(cpm), _delta_str(d_cpm), "📊", delta_inverse=True),
+                kpi_card("Impressões", fmt_int(total_imp), icon="👁️"),
+                kpi_card("Cliques", fmt_int(total_clicks), icon="🖱️"),
+                kpi_card("CPC", brl(cpc), icon="💵"),
+                kpi_card("CPM", brl(cpm), icon="📊"),
                 kpi_card("Ticket Médio", brl(ticket_medio), icon="🧾"),
                 kpi_card("Frequência", fmt_dec(avg_freq, 1), icon="🔄"),
             ]), unsafe_allow_html=True)
@@ -1247,27 +1142,27 @@ with tab_overview:
     if is_tofu:
         st.markdown(H("KPIs Estratégicos", "sh-blue"), unsafe_allow_html=True)
         st.markdown(kpi_row([
-            kpi_card("Valor Gasto", brl(total_spend), _delta_str(d_spend), "💰"),
-            kpi_card("Alcance", fmt_int(total_reach), _delta_str(d_reach), "📡"),
-            kpi_card("CPM", brl(cpm), _delta_str(d_cpm), "📊", delta_inverse=True),
-            kpi_card("CTR", fmt_pct(ctr), _delta_str(d_ctr), "👆"),
-            kpi_card("Engajamento", fmt_int(total_engagement), _delta_str(d_eng), "❤️"),
-            kpi_card("Custo/Engajamento", brl(cost_per_eng), _delta_str(d_cost_eng), "💵", delta_inverse=True),
+            kpi_card("Valor Gasto", brl(total_spend), icon="💰"),
+            kpi_card("Alcance", fmt_int(total_reach), icon="📡"),
+            kpi_card("CPM", brl(cpm), icon="📊"),
+            kpi_card("CTR", fmt_pct(ctr), icon="👆"),
+            kpi_card("Engajamento", fmt_int(total_engagement), icon="❤️"),
+            kpi_card("Custo/Engajamento", brl(cost_per_eng), icon="💵"),
         ]), unsafe_allow_html=True)
 
         with st.expander("📋 KPIs Secundários"):
             st.markdown(kpi_row([
-                kpi_card("Impressões", fmt_int(total_imp), _delta_str(d_imp), "👁️"),
-                kpi_card("Cliques", fmt_int(total_clicks), _delta_str(d_clicks), "🖱️"),
-                kpi_card("CPC", brl(cpc), _delta_str(d_cpc), "💵", delta_inverse=True),
+                kpi_card("Impressões", fmt_int(total_imp), icon="👁️"),
+                kpi_card("Cliques", fmt_int(total_clicks), icon="🖱️"),
+                kpi_card("CPC", brl(cpc), icon="💵"),
                 kpi_card("Frequência", fmt_dec(avg_freq, 1), icon="🔄"),
-                kpi_card("CPR (custo/1k alcance)", brl(cpr), _delta_str(d_cpr), "📡", delta_inverse=True),
+                kpi_card("CPR (custo/1k alcance)", brl(cpr), icon="📡"),
             ]), unsafe_allow_html=True)
 
     # ── Smart Insights (gerados automaticamente) ─────────────────────────
     _auto_insights = _generate_smart_insights(
         total_spend, roas, cpa, ctr, avg_freq, total_purch,
-        target_roas, target_cpa, monthly_budget, d_roas, d_cpa
+        target_roas, target_cpa, monthly_budget
     )
     if _auto_insights:
         st.markdown(H("Insights Automáticos", "sh-green"), unsafe_allow_html=True)
@@ -2860,36 +2755,36 @@ def _generate_pdf():
 
     _section("KPIs Estrat\u00e9gicos")
     _kpis([
-        ("Valor Gasto", brl(total_spend), _delta_str(d_spend)),
-        ("ROAS", fmt_dec(roas, suffix="x"), _delta_str(d_roas)),
-        ("CPA", brl(cpa), _delta_str(d_cpa)),
-        ("Convers\u00f5es", fmt_int(total_purch), _delta_str(d_purch)),
-        ("Receita", brl(total_rev), _delta_str(d_rev)),
-        ("CTR", fmt_pct(ctr), _delta_str(d_ctr)),
+        ("Valor Gasto", brl(total_spend), None),
+        ("ROAS", fmt_dec(roas, suffix="x"), None),
+        ("CPA", brl(cpa), None),
+        ("Convers\u00f5es", fmt_int(total_purch), None),
+        ("Receita", brl(total_rev), None),
+        ("CTR", fmt_pct(ctr), None),
     ])
 
     _section("KPIs Secund\u00e1rios")
     _kpis([
-        ("Impress\u00f5es", fmt_int(total_imp), _delta_str(d_imp)),
-        ("Cliques", fmt_int(total_clicks), _delta_str(d_clicks)),
-        ("CPC", brl(cpc), _delta_str(d_cpc)),
-        ("CPM", brl(cpm), _delta_str(d_cpm)),
+        ("Impress\u00f5es", fmt_int(total_imp), None),
+        ("Cliques", fmt_int(total_clicks), None),
+        ("CPC", brl(cpc), None),
+        ("CPM", brl(cpm), None),
         ("Ticket M\u00e9dio", brl(ticket_medio), None),
         ("Frequ\u00eancia", fmt_dec(avg_freq, 1), None),
     ])
 
     _section("Alcance & Engajamento")
     _kpis([
-        ("Alcance", fmt_int(total_reach), _delta_str(d_reach)),
-        ("Engajamento", fmt_int(total_engagement), _delta_str(d_eng)),
-        ("Custo/Eng.", brl(cost_per_eng), _delta_str(d_cost_eng)),
-        ("CPL", brl(cpl), _delta_str(d_cpl)),
+        ("Alcance", fmt_int(total_reach), None),
+        ("Engajamento", fmt_int(total_engagement), None),
+        ("Custo/Eng.", brl(cost_per_eng), None),
+        ("CPL", brl(cpl), None),
     ])
 
     # Smart Insights in PDF
     _auto_insights_pdf = _generate_smart_insights(
         total_spend, roas, cpa, ctr, avg_freq, total_purch,
-        target_roas, target_cpa, monthly_budget, d_roas, d_cpa
+        target_roas, target_cpa, monthly_budget
     )
     if _auto_insights_pdf:
         _section("Insights Autom\u00e1ticos", _GN)
