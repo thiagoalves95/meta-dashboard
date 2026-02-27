@@ -232,14 +232,14 @@ CHART_DEFAULTS = dict(
         font_family="Inter, sans-serif",
     ),
     hovermode="x unified",
-    xaxis=dict(gridcolor="rgba(255,255,255,0.04)", zerolinecolor="rgba(255,255,255,0.06)"),
-    yaxis=dict(gridcolor="rgba(255,255,255,0.04)", zerolinecolor="rgba(255,255,255,0.06)"),
-    legend=dict(
-        font=dict(size=11, color="#9CA3AF"),
-        bgcolor="rgba(0,0,0,0)",
-    ),
-    margin=dict(l=10, r=10, t=10, b=10),
 )
+
+# Reusable axis / legend / margin defaults (applied per-chart to avoid kwarg conflicts)
+_GRID = "rgba(255,255,255,0.04)"
+_ZERO = "rgba(255,255,255,0.06)"
+_LEGEND_BOTTOM = dict(orientation="h", y=-0.15, xanchor="center", x=0.5,
+                      font=dict(size=11, color="#9CA3AF"), bgcolor="rgba(0,0,0,0)")
+_MARGIN = dict(l=10, r=10, t=10, b=10)
 
 
 def _add_annotations(fig, x_series, y_series, fmt_fn=None):
@@ -2417,8 +2417,16 @@ with tab_diagnostic:
 PDF_CHART_LAYOUT = dict(
     paper_bgcolor="#0E1117",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="white", size=11),
+    font=dict(family="Inter, Arial, sans-serif", color="white", size=11),
     margin=dict(l=50, r=30, t=30, b=40),
+    xaxis=dict(gridcolor="rgba(255,255,255,0.06)", gridwidth=1),
+    yaxis=dict(gridcolor="rgba(255,255,255,0.06)", gridwidth=1),
+    hoverlabel=dict(
+        bgcolor="#1A1A2E",
+        font_color="white",
+        font_size=12,
+        bordercolor="rgba(255,255,255,0.1)",
+    ),
 )
 
 
@@ -2437,16 +2445,8 @@ def _generate_pdf():
     _TL = (14, 165, 233)
     _BLUE = (59, 130, 246)
 
-    def _s(t):
-        """Ensure text is latin-1 safe for built-in PDF fonts."""
-        if t is None:
-            return ""
-        t = str(t)
-        try:
-            t.encode("latin-1")
-            return t
-        except UnicodeEncodeError:
-            return t.encode("latin-1", errors="replace").decode("latin-1")
+    # ── Font path resolution ─────────────────────────────────────────
+    _fonts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
     class _ReportPDF(FPDF):
         def header(self):
@@ -2454,53 +2454,87 @@ def _generate_pdf():
             self.rect(0, 0, self.w, self.h, "F")
 
         def footer(self):
-            self.set_y(-10)
-            self.set_font("Helvetica", "I", 7)
+            if self.page_no() == 1:
+                return  # Cover page: no footer
+            self.set_y(-12)
+            # Separator line
+            self.set_draw_color(50, 50, 70)
+            self.line(10, self.get_y(), self.w - 10, self.get_y())
+            self.ln(1.5)
+            self.set_font("Inter", "", 6.5)
             self.set_text_color(100, 100, 100)
-            self.cell(0, 8, f"Pag. {self.page_no()}/{{nb}}", align="C")
+            # Left: generation date
+            self.cell(60, 5, f"Gerado em {date.today().strftime('%d/%m/%Y')}")
+            # Center: branding + page
+            self.cell(0, 5, f"Meta Dashboard  \u00b7  P\u00e1g. {self.page_no()}/{{nb}}",
+                      align="C")
 
     pdf = _ReportPDF(orientation="L", unit="mm", format="A4")
     pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=15)
 
-    # ── Helpers ──────────────────────────────────────────────────────────
+    # ── Register Inter TTF fonts (unicode-safe) ──────────────────────
+    pdf.add_font("Inter", "", os.path.join(_fonts_dir, "Inter-Regular.ttf"))
+    pdf.add_font("Inter", "B", os.path.join(_fonts_dir, "Inter-Bold.ttf"))
+    pdf.add_font("Inter", "I", os.path.join(_fonts_dir, "Inter-Italic.ttf"))
 
-    def _heading(text, sz=16):
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    def _heading(text, sz=16, subtitle=None):
+        """Page heading with accent gradient bar at top."""
+        y = pdf.get_y()
+        # Gradient bar (orange → teal, simulated with 2 rects)
+        bar_w = pdf.w - 20
+        half = bar_w / 2
+        pdf.set_fill_color(*_AC)
+        pdf.rect(10, y, half, 3, "F")
+        pdf.set_fill_color(*_TL)
+        pdf.rect(10 + half, y, half, 3, "F")
+        pdf.set_y(y + 5)
+        # Title
         pdf.set_text_color(*_WH)
-        pdf.set_font("Helvetica", "B", sz)
-        pdf.cell(0, 10, _s(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-
-    def _sub(text):
-        pdf.set_text_color(*_GR)
-        pdf.set_font("Helvetica", "", 9)
-        pdf.cell(0, 6, _s(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.set_font("Inter", "B", sz)
+        pdf.cell(0, 10, str(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        if subtitle:
+            pdf.set_text_color(*_GR)
+            pdf.set_font("Inter", "", 9)
+            pdf.cell(0, 6, str(subtitle), new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+        pdf.ln(1)
 
     def _section(text, color=_AC):
         pdf.ln(2)
         y = pdf.get_y()
+        # Background stripe
+        pdf.set_fill_color(20, 20, 38)
+        pdf.rect(10, y, pdf.w - 20, 9, "F")
+        # Left accent bar
         pdf.set_fill_color(*color)
-        pdf.rect(10, y, 3, 8, "F")
-        pdf.set_xy(16, y)
+        pdf.rect(10, y, 4, 9, "F")
+        pdf.set_xy(18, y + 0.5)
         pdf.set_text_color(*_WH)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 8, _s(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_font("Inter", "B", 10)
+        pdf.cell(0, 8, str(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(1)
 
     def _insight(text):
-        """Render insight box matching frontend style."""
+        """Insight box with left accent border."""
         y = pdf.get_y()
+        # Background
         pdf.set_fill_color(15, 25, 50)
-        pdf.set_draw_color(59, 130, 246)
-        lines = _s(text).split("\n")
+        lines = str(text).split("\n")
         h = max(12, 5 * len(lines) + 4)
-        pdf.rect(10, y, pdf.w - 20, h, "DF")
-        pdf.set_xy(14, y + 2)
+        pdf.rect(10, y, pdf.w - 20, h, "F")
+        # Left accent bar (blue)
+        pdf.set_fill_color(*_BLUE)
+        pdf.rect(10, y, 4, h, "F")
+        # Text
+        pdf.set_xy(18, y + 2)
         pdf.set_text_color(209, 213, 219)
-        pdf.set_font("Helvetica", "", 7.5)
+        pdf.set_font("Inter", "", 7.5)
         for line in lines:
-            pdf.cell(pdf.w - 28, 4.5, _s(line),
+            pdf.cell(pdf.w - 32, 4.5, str(line),
                      new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-            pdf.set_x(14)
+            pdf.set_x(18)
         pdf.set_y(y + h + 2)
         pdf.set_text_color(*_WH)
 
@@ -2512,18 +2546,25 @@ def _generate_pdf():
         y0 = pdf.get_y()
         for i, (label, value, delta) in enumerate(items):
             x = 10 + i * cw
+            # Card background
             pdf.set_fill_color(*_SF)
-            pdf.rect(x, y0, cw - 2, 20, "F")
-            pdf.set_xy(x + 1, y0 + 2)
+            pdf.rect(x, y0, cw - 2, 22, "F")
+            # Accent bar on top (orange)
+            pdf.set_fill_color(*_AC)
+            pdf.rect(x, y0, cw - 2, 2.5, "F")
+            # Label (UPPERCASE)
+            pdf.set_xy(x + 1, y0 + 4)
             pdf.set_text_color(*_GR)
-            pdf.set_font("Helvetica", "", 6.5)
-            pdf.cell(cw - 2, 3.5, _s(label), align="C")
-            pdf.set_xy(x + 1, y0 + 6.5)
+            pdf.set_font("Inter", "", 5.5)
+            pdf.cell(cw - 4, 3.5, str(label).upper(), align="C")
+            # Value (bold, large)
+            pdf.set_xy(x + 1, y0 + 8.5)
             pdf.set_text_color(*_WH)
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.cell(cw - 2, 6, _s(value), align="C")
+            pdf.set_font("Inter", "B", 11)
+            pdf.cell(cw - 4, 6, str(value), align="C")
+            # Delta
             if delta:
-                pdf.set_xy(x + 1, y0 + 14)
+                pdf.set_xy(x + 1, y0 + 16)
                 ds = str(delta)
                 if ds.startswith("+"):
                     pdf.set_text_color(*_GN)
@@ -2531,9 +2572,9 @@ def _generate_pdf():
                     pdf.set_text_color(*_RD)
                 else:
                     pdf.set_text_color(*_GR)
-                pdf.set_font("Helvetica", "", 6.5)
-                pdf.cell(cw - 2, 3.5, _s(ds), align="C")
-        pdf.set_y(y0 + 23)
+                pdf.set_font("Inter", "", 6.5)
+                pdf.cell(cw - 4, 3.5, ds, align="C")
+        pdf.set_y(y0 + 25)
         pdf.set_text_color(*_WH)
 
     def _chart(fig, w=255, h=350):
@@ -2543,9 +2584,9 @@ def _generate_pdf():
             buf = io.BytesIO(img)
             pdf.image(buf, x=(pdf.w - w) / 2, w=w)
         except Exception:
-            pdf.set_font("Helvetica", "I", 9)
+            pdf.set_font("Inter", "I", 9)
             pdf.set_text_color(*_GR)
-            pdf.cell(0, 8, "[Grafico indisponivel - instale kaleido]",
+            pdf.cell(0, 8, "[Gr\u00e1fico indispon\u00edvel \u2014 instale kaleido]",
                      new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
             pdf.set_text_color(*_WH)
 
@@ -2554,27 +2595,46 @@ def _generate_pdf():
         if widths is None:
             widths = [(pdf.w - 20) / n] * n
 
+        # Determine numeric-like columns for right-alignment
+        _num_cols = set()
+        for i, h in enumerate(headers):
+            hl = h.lower()
+            if hl not in ("campanha", "criativo", "ad_name", "nome"):
+                _num_cols.add(i)
+
         def _tbl_header():
-            pdf.set_fill_color(*_SF)
+            y = pdf.get_y()
+            # Header gradient (2 tones)
+            pdf.set_fill_color(30, 30, 55)
+            pdf.rect(10, y, pdf.w - 20, 7, "F")
+            pdf.set_fill_color(35, 35, 62)
+            pdf.rect(10, y, (pdf.w - 20) / 2, 7, "F")
+            # Bottom border
+            pdf.set_draw_color(60, 60, 90)
+            pdf.line(10, y + 7, pdf.w - 10, y + 7)
+            pdf.set_xy(10, y)
             pdf.set_text_color(*_WH)
-            pdf.set_font("Helvetica", "B", 7)
+            pdf.set_font("Inter", "B", 7)
             for i, h in enumerate(headers):
-                pdf.cell(widths[i], 6, _s(h), fill=True, align="C")
+                pdf.cell(widths[i], 7, str(h), fill=False, align="C")
             pdf.ln()
 
         _tbl_header()
-        pdf.set_font("Helvetica", "", 6.5)
+        pdf.set_font("Inter", "", 6.5)
         for ri, row in enumerate(rows):
             if pdf.get_y() > pdf.h - 20:
                 pdf.add_page()
                 _tbl_header()
-                pdf.set_font("Helvetica", "", 6.5)
+                pdf.set_font("Inter", "", 6.5)
+            # Subtle zebra striping
             if ri % 2 == 0:
-                pdf.set_fill_color(20, 20, 35)
+                pdf.set_fill_color(18, 18, 32)
             else:
                 pdf.set_fill_color(*_BG)
+            pdf.set_text_color(220, 220, 220)
             for i, val in enumerate(row):
-                pdf.cell(widths[i], 5, _s(str(val)[:40]), fill=True, align="C")
+                align = "R" if i in _num_cols else "L"
+                pdf.cell(widths[i], 5.5, str(val)[:40], fill=True, align=align)
             pdf.ln()
         pdf.set_text_color(*_WH)
 
@@ -2622,103 +2682,167 @@ def _generate_pdf():
         thumb_url = _get_thumb(row) if callable(_get_thumb) else None
         img_buf = _dl_image(thumb_url)
 
-        # Thumbnail or placeholder
+        # Card background
+        pdf.set_fill_color(*_SF)
+        pdf.rect(10, y0, pdf.w - 20, img_h + 2, "F")
+
+        # Thumbnail area
         pdf.set_fill_color(42, 42, 58)
-        pdf.rect(10, y0, img_w, img_h, "F")
+        pdf.rect(11, y0 + 1, img_w, img_h, "F")
         if img_buf:
             try:
-                _fit_img(img_buf, 10, y0, img_w, img_h)
+                _fit_img(img_buf, 11, y0 + 1, img_w, img_h)
             except Exception:
-                pdf.set_xy(10, y0 + 15)
+                pdf.set_xy(11, y0 + 15)
                 pdf.set_text_color(*_GR)
-                pdf.set_font("Helvetica", "I", 7)
+                pdf.set_font("Inter", "I", 7)
                 pdf.cell(img_w, 4, "Sem preview", align="C")
         else:
-            pdf.rect(10, y0, img_w, img_h, "F")
-            pdf.set_xy(10, y0 + 15)
+            pdf.set_xy(11, y0 + 15)
             pdf.set_text_color(*_GR)
-            pdf.set_font("Helvetica", "I", 7)
+            pdf.set_font("Inter", "I", 7)
             pdf.cell(img_w, 4, "Sem preview", align="C")
 
-        mx = 10 + img_w + 4
-        mw = pdf.w - mx - 10
+        mx = 11 + img_w + 4
+        mw = pdf.w - mx - 12
 
         # Name + badge
-        pdf.set_xy(mx, y0)
+        pdf.set_xy(mx, y0 + 1)
         name = str(row.get("ad_name", "-"))[:55]
-        rank_str = f"#{rank} - " if rank else ""
+        rank_str = f"#{rank} \u2014 " if rank else ""
         pdf.set_text_color(*_WH)
-        pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(mw - 30, 5, _s(f"{rank_str}{name}"))
+        pdf.set_font("Inter", "B", 9)
+        pdf.cell(mw - 30, 5, f"{rank_str}{name}")
         if badge_text and badge_color:
             bx = pdf.get_x()
-            pdf.set_xy(bx, y0)
+            pdf.set_xy(bx, y0 + 1)
             pdf.set_fill_color(*badge_color)
             pdf.set_text_color(255, 255, 255)
-            pdf.set_font("Helvetica", "B", 6)
-            pdf.cell(28, 5, _s(badge_text), fill=True, align="C")
+            pdf.set_font("Inter", "B", 6)
+            pdf.cell(28, 5, str(badge_text), fill=True, align="C")
 
         # Headline
         title_val = row.get("title", "") or row.get("name", "") or ""
         if title_val and str(title_val) != "nan":
-            pdf.set_xy(mx, y0 + 6)
+            pdf.set_xy(mx, y0 + 7)
             pdf.set_text_color(*_GR)
-            pdf.set_font("Helvetica", "I", 6.5)
-            pdf.cell(mw, 3.5, _s(f"Headline: {str(title_val)[:80]}"))
+            pdf.set_font("Inter", "I", 6.5)
+            pdf.cell(mw, 3.5, f"Headline: {str(title_val)[:80]}")
 
-        # Metrics row 1
-        my1 = y0 + 11
+        # Metrics grid row 1 (4 cols)
+        my1 = y0 + 12
         m_cw = mw / 4
         for j, (ml, mv) in enumerate([
-            ("Spend", brl(row.get("spend", 0))),
-            ("Impressoes", fmt_int(row.get("impressions", 0))),
-            ("Cliques", fmt_int(row.get("clicks", 0))),
+            ("SPEND", brl(row.get("spend", 0))),
+            ("IMPRESS\u00d5ES", fmt_int(row.get("impressions", 0))),
+            ("CLIQUES", fmt_int(row.get("clicks", 0))),
             ("CTR", fmt_pct(row.get("CTR", 0))),
         ]):
             x = mx + j * m_cw
             pdf.set_xy(x, my1)
             pdf.set_text_color(*_GR)
-            pdf.set_font("Helvetica", "", 5.5)
-            pdf.cell(m_cw, 3, _s(ml))
+            pdf.set_font("Inter", "", 5)
+            pdf.cell(m_cw, 3, ml)
             pdf.set_xy(x, my1 + 3)
             pdf.set_text_color(*_WH)
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.cell(m_cw, 5, _s(mv))
+            pdf.set_font("Inter", "B", 8)
+            pdf.cell(m_cw, 5, str(mv))
 
-        # Metrics row 2
+        # Metrics grid row 2
         my2 = my1 + 10
         for j, (ml, mv) in enumerate([
-            ("Conversoes", fmt_int(row.get("purchases", 0))),
+            ("CONVERS\u00d5ES", fmt_int(row.get("purchases", 0))),
             ("CPA", brl(row.get("CPA", 0))),
             ("ROAS", fmt_dec(row.get("ROAS", 0), suffix="x")),
-            ("Freq.", fmt_dec(row.get("avg_freq", 0), 1)),
+            ("FREQ.", fmt_dec(row.get("avg_freq", 0), 1)),
         ]):
             x = mx + j * m_cw
             pdf.set_xy(x, my2)
             pdf.set_text_color(*_GR)
-            pdf.set_font("Helvetica", "", 5.5)
-            pdf.cell(m_cw, 3, _s(ml))
+            pdf.set_font("Inter", "", 5)
+            pdf.cell(m_cw, 3, ml)
             pdf.set_xy(x, my2 + 3)
             pdf.set_text_color(*_WH)
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.cell(m_cw, 5, _s(mv))
+            pdf.set_font("Inter", "B", 8)
+            pdf.cell(m_cw, 5, str(mv))
 
         # Separator
-        pdf.set_y(y0 + img_h + 2)
+        pdf.set_y(y0 + img_h + 4)
         pdf.set_draw_color(50, 50, 70)
         pdf.line(10, pdf.get_y(), pdf.w - 10, pdf.get_y())
         pdf.ln(3)
         pdf.set_text_color(*_WH)
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE 1 — Resumo Executivo
+    #  COVER PAGE — Capa com branding
     # ══════════════════════════════════════════════════════════════════════
     pdf.add_page()
-    _heading("PAINEL DE PERFORMANCE - META ADS + GA4")
-    _sub(
-        f"{date_from.strftime('%d/%m/%Y')} - {date_to.strftime('%d/%m/%Y')}"
-        f"  |  Conta: {_acct_label}  |  {_camp_label}"
-    )
+
+    # Top gradient bar (orange → teal)
+    bar_h = 6
+    bar_w = pdf.w
+    half_w = bar_w / 2
+    pdf.set_fill_color(*_AC)
+    pdf.rect(0, 0, half_w, bar_h, "F")
+    pdf.set_fill_color(*_TL)
+    pdf.rect(half_w, 0, half_w, bar_h, "F")
+
+    # Main title block — centered vertically
+    pdf.set_y(55)
+    pdf.set_text_color(*_WH)
+    pdf.set_font("Inter", "B", 32)
+    pdf.cell(0, 18, "META DASHBOARD", align="C",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Inter", "", 14)
+    pdf.set_text_color(200, 200, 210)
+    pdf.cell(0, 10, "Performance Analytics Report", align="C",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # Divider line
+    pdf.ln(6)
+    _div_y = pdf.get_y()
+    pdf.set_draw_color(60, 60, 90)
+    pdf.line(pdf.w / 2 - 40, _div_y, pdf.w / 2 + 40, _div_y)
+    pdf.ln(8)
+
+    # Period / Account / Campaign
+    pdf.set_font("Inter", "", 11)
+    pdf.set_text_color(*_GR)
+    pdf.cell(0, 7,
+             f"Per\u00edodo: {date_from.strftime('%d/%m/%Y')} \u2014 {date_to.strftime('%d/%m/%Y')}",
+             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 7, f"Conta: {_acct_label}", align="C",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 7, f"Campanha: {_camp_label}", align="C",
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # Badge: auto-generated
+    pdf.ln(10)
+    _badge_w = 72
+    _badge_x = (pdf.w - _badge_w) / 2
+    _badge_y = pdf.get_y()
+    pdf.set_fill_color(25, 25, 45)
+    pdf.set_draw_color(60, 60, 90)
+    pdf.rect(_badge_x, _badge_y, _badge_w, 8, "DF")
+    pdf.set_xy(_badge_x, _badge_y + 0.5)
+    pdf.set_font("Inter", "I", 7)
+    pdf.set_text_color(150, 150, 170)
+    pdf.cell(_badge_w, 7, "Relat\u00f3rio Gerado Automaticamente", align="C")
+
+    # Footer branding on cover
+    pdf.set_y(pdf.h - 20)
+    pdf.set_font("Inter", "", 7)
+    pdf.set_text_color(80, 80, 100)
+    pdf.cell(0, 5, "Meta Dashboard \u00b7 Powered by Windsor.ai + Streamlit",
+             align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # ══════════════════════════════════════════════════════════════════════
+    #  PAGE 2 — Resumo Executivo
+    # ══════════════════════════════════════════════════════════════════════
+    pdf.add_page()
+    _heading("PAINEL DE PERFORMANCE \u2014 META ADS + GA4",
+             subtitle=f"{date_from.strftime('%d/%m/%Y')} \u2014 {date_to.strftime('%d/%m/%Y')}"
+                      f"  |  Conta: {_acct_label}  |  {_camp_label}")
     pdf.ln(2)
 
     # Budget Pacing (if configured)
@@ -2727,7 +2851,7 @@ def _generate_pdf():
         _period_days = (date_to - date_from).days + 1
         _ideal_spend = monthly_budget * (_period_days / 30)
         _pacing_pct = safe_div(total_spend, _ideal_spend, 100)
-        _pacing_status = "OK" if _pacing_pct <= 110 else ("ATENCAO" if _pacing_pct <= 130 else "EXCEDIDO")
+        _pacing_status = "OK" if _pacing_pct <= 110 else ("ATEN\u00c7\u00c3O" if _pacing_pct <= 130 else "EXCEDIDO")
         _insight(
             f"BUDGET PACING: {_pacing_status} ({fmt_pct(_pacing_pct)} do ideal)\n"
             f"Gasto: {brl(total_spend)} de {brl(monthly_budget)} | "
@@ -2736,30 +2860,30 @@ def _generate_pdf():
 
     # Insight box
     _insight(
-        f"Investimento de {brl(total_spend)} no periodo com ROAS de "
-        f"{fmt_dec(roas, suffix='x')} | CPA medio de {brl(cpa)}\n"
+        f"Investimento de {brl(total_spend)} no per\u00edodo com ROAS de "
+        f"{fmt_dec(roas, suffix='x')} | CPA m\u00e9dio de {brl(cpa)}\n"
         f"{_n_camps} campanhas ativas | CTR geral de {fmt_pct(ctr)} | "
-        f"Frequencia media: {fmt_dec(avg_freq, 1)}"
+        f"Frequ\u00eancia m\u00e9dia: {fmt_dec(avg_freq, 1)}"
     )
 
-    _section("KPIs Estrategicos")
+    _section("KPIs Estrat\u00e9gicos")
     _kpis([
         ("Valor Gasto", brl(total_spend), _delta_str(d_spend)),
         ("ROAS", fmt_dec(roas, suffix="x"), _delta_str(d_roas)),
         ("CPA", brl(cpa), _delta_str(d_cpa)),
-        ("Conversoes", fmt_int(total_purch), _delta_str(d_purch)),
+        ("Convers\u00f5es", fmt_int(total_purch), _delta_str(d_purch)),
         ("Receita", brl(total_rev), _delta_str(d_rev)),
         ("CTR", fmt_pct(ctr), _delta_str(d_ctr)),
     ])
 
-    _section("KPIs Secundarios")
+    _section("KPIs Secund\u00e1rios")
     _kpis([
-        ("Impressoes", fmt_int(total_imp), _delta_str(d_imp)),
+        ("Impress\u00f5es", fmt_int(total_imp), _delta_str(d_imp)),
         ("Cliques", fmt_int(total_clicks), _delta_str(d_clicks)),
         ("CPC", brl(cpc), _delta_str(d_cpc)),
         ("CPM", brl(cpm), _delta_str(d_cpm)),
-        ("Ticket Medio", brl(ticket_medio), None),
-        ("Frequencia", fmt_dec(avg_freq, 1), None),
+        ("Ticket M\u00e9dio", brl(ticket_medio), None),
+        ("Frequ\u00eancia", fmt_dec(avg_freq, 1), None),
     ])
 
     _section("Alcance & Engajamento")
@@ -2776,15 +2900,17 @@ def _generate_pdf():
         target_roas, target_cpa, monthly_budget, d_roas, d_cpa
     )
     if _auto_insights_pdf:
-        _section("Insights Automaticos", _GN)
+        _section("Insights Autom\u00e1ticos", _GN)
         _ins_text = "\n".join([i.replace("**", "").replace("*", "") for i in _auto_insights_pdf])
         _insight(_ins_text)
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE 2 — Tendencia Diaria + Top Campanhas
+    #  PAGE 3 — Tend\u00eancia Di\u00e1ria + Top Campanhas
     # ══════════════════════════════════════════════════════════════════════
     pdf.add_page()
-    _section("Tendencia Diaria (com media movel 7d)")
+    _heading("Tend\u00eancia Di\u00e1ria + Campanhas", 14)
+
+    _section("Tend\u00eancia Di\u00e1ria (com m\u00e9dia m\u00f3vel 7d)")
 
     _pdf_daily = _get_daily_camp()
     if not _pdf_daily.empty and "date" in _pdf_daily.columns:
@@ -2822,7 +2948,7 @@ def _generate_pdf():
         _chart(fig)
 
     pdf.ln(2)
-    _section("Visao Geral por Campanha")
+    _section("Vis\u00e3o Geral por Campanha")
     _pdf_ov = df_camp.groupby("campaign", as_index=False).agg(
         impressions=("impressions", "sum"), clicks=("clicks", "sum"),
         spend=("spend", "sum"), purchases=("actions_purchase", "sum"),
@@ -2847,26 +2973,26 @@ def _generate_pdf():
     )
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE 3 — Funil de Conversao
+    #  PAGE 4 — Funil de Convers\u00e3o
     # ══════════════════════════════════════════════════════════════════════
     pdf.add_page()
-    _heading("Funil de Conversao", 14)
+    _heading("Funil de Convers\u00e3o", 14)
 
     _cr_total = safe_div(total_purch, total_imp, 100)
     _cr_click = safe_div(total_purch, total_link_clicks if total_link_clicks else total_clicks, 100)
     _insight(
-        f"Taxa de conversao geral (impressao->compra): {fmt_pct(_cr_total)}\n"
-        f"Taxa de conversao de clique->compra: {fmt_pct(_cr_click)}\n"
-        f"{fmt_int(total_purch)} compras de {fmt_int(total_imp)} impressoes no periodo"
+        f"Taxa de convers\u00e3o geral (impress\u00e3o\u2192compra): {fmt_pct(_cr_total)}\n"
+        f"Taxa de convers\u00e3o de clique\u2192compra: {fmt_pct(_cr_click)}\n"
+        f"{fmt_int(total_purch)} compras de {fmt_int(total_imp)} impress\u00f5es no per\u00edodo"
     )
 
-    _section("Funil Completo de Conversao", _GN)
+    _section("Funil Completo de Convers\u00e3o", _GN)
     _pdf_funnel = [
-        ("Impressoes", total_imp),
+        ("Impress\u00f5es", total_imp),
         ("Cliques no Link", total_link_clicks if total_link_clicks else total_clicks),
-        ("Vis. de Pagina", total_lpv),
-        ("Adicao ao Carrinho", total_atc),
-        ("Inicio de Checkout", total_ic),
+        ("Vis. de P\u00e1gina", total_lpv),
+        ("Adi\u00e7\u00e3o ao Carrinho", total_atc),
+        ("In\u00edcio de Checkout", total_ic),
         ("Compra", total_purch),
     ]
     _f_labels = [f[0] for f in _pdf_funnel]
@@ -2896,14 +3022,14 @@ def _generate_pdf():
         _pl, _pv = _pdf_funnel[i - 1]
         _cl, _cv = _pdf_funnel[i]
         _rate = safe_div(_cv, _pv, 100)
-        _rate_items.append((f"{_pl} -> {_cl}", f"{_rate:.1f}%", None))
+        _rate_items.append((f"{_pl} \u2192 {_cl}", f"{_rate:.1f}%", None))
     _kpis(_rate_items)
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE 4+ — Criativos
+    #  PAGE 5+ — Criativos
     # ══════════════════════════════════════════════════════════════════════
     pdf.add_page()
-    _heading("Criativos - Performance", 14)
+    _heading("Criativos \u2014 Performance", 14)
 
     if not df_ad.empty:
         _cr_agg = {
@@ -2946,14 +3072,14 @@ def _generate_pdf():
         _best_cpa = brl(_with_conv.nsmallest(1, "CPA")["CPA"].values[0]) if not _with_conv.empty else "-"
         _best_name = _with_conv.nsmallest(1, "CPA")["ad_name"].values[0][:50] if not _with_conv.empty else "-"
         _n_fat = len(_pdf_ca[_pdf_ca["avg_freq"] >= 2.5])
-        _fat_txt = f" | {_n_fat} criativos com freq >= 2,5" if _n_fat > 0 else ""
+        _fat_txt = f" | {_n_fat} criativos com freq \u2265 2,5" if _n_fat > 0 else ""
         _insight(
             f"{_n_cr} criativos ativos | Top performer: {_best_name} com CPA de {_best_cpa}\n"
             f"Maior spend: {_top_name} ({brl(_pdf_ca.iloc[0]['spend'])}){_fat_txt}"
         )
 
         # Video KPIs
-        _section("Performance de Video", (168, 85, 247))
+        _section("Performance de V\u00eddeo", (168, 85, 247))
         _kpis([
             ("Video Views", fmt_int(total_vv), None),
             ("ThruPlay", fmt_int(total_thruplay), None),
@@ -2964,26 +3090,25 @@ def _generate_pdf():
         # Winner cards
         _winners = _with_conv.nsmallest(3, "CPA")
         if not _winners.empty:
-            _section("Top Performers - Menor CPA", _GN)
+            _section("Top Performers \u2014 Menor CPA", _GN)
             for i, (_, row) in enumerate(_winners.iterrows(), 1):
                 _creative_card(row, rank=i, badge_color=_GN, badge_text="WINNER")
 
         # Loser cards
         _losers = _with_conv.nlargest(3, "CPA")
         if not _losers.empty and len(_with_conv) > 3:
-            _section("Underperformers - Maior CPA", _RD)
+            _section("Underperformers \u2014 Maior CPA", _RD)
             for i, (_, row) in enumerate(_losers.iterrows(), 1):
                 _creative_card(row, rank=i, badge_color=_RD, badge_text="UNDERPERFORMER")
 
         # Fatigue cards
         _fatigued = _pdf_ca[_pdf_ca["avg_freq"] >= 2.5].sort_values("avg_freq", ascending=False).head(3)
         if not _fatigued.empty:
-            _section("Criativos com Fadiga (Freq >= 2,5)", _RD)
+            _section("Criativos com Fadiga (Freq \u2265 2,5)", _RD)
             for _, row in _fatigued.iterrows():
                 _creative_card(row, badge_color=(230, 81, 0), badge_text="FADIGA")
 
         # ── Galeria Completa de Criativos (grid 3 colunas) ──────────────
-        pdf.add_page()
         _section(f"Galeria Completa de Criativos ({len(_pdf_ca)})", _BLUE)
 
         _gc_cols = 3
@@ -3005,62 +3130,65 @@ def _generate_pdf():
                 # Card background
                 pdf.set_fill_color(*_SF)
                 pdf.rect(gx, y0, _gc_cw, _gc_h - 2, "F")
+                # Top accent bar per card
+                pdf.set_fill_color(*_AC)
+                pdf.rect(gx, y0, _gc_cw, 1.5, "F")
 
                 # Thumbnail (top portion)
                 _g_thumb_url = _get_thumb(grow) if callable(_get_thumb) else None
                 _g_img = _dl_image(_g_thumb_url)
                 _g_th = 24  # thumbnail height
                 pdf.set_fill_color(42, 42, 58)
-                pdf.rect(gx + 1, y0 + 1, _gc_cw - 2, _g_th, "F")
+                pdf.rect(gx + 1, y0 + 2, _gc_cw - 2, _g_th, "F")
                 if _g_img:
                     try:
-                        _fit_img(_g_img, gx + 1, y0 + 1,
+                        _fit_img(_g_img, gx + 1, y0 + 2,
                                  _gc_cw - 2, _g_th)
                     except Exception:
-                        pdf.set_xy(gx + 1, y0 + 10)
+                        pdf.set_xy(gx + 1, y0 + 12)
                         pdf.set_text_color(*_GR)
-                        pdf.set_font("Helvetica", "I", 6)
+                        pdf.set_font("Inter", "I", 6)
                         pdf.cell(_gc_cw - 2, 4, "Sem preview", align="C")
                 else:
-                    pdf.set_xy(gx + 1, y0 + 10)
+                    pdf.set_xy(gx + 1, y0 + 12)
                     pdf.set_text_color(*_GR)
-                    pdf.set_font("Helvetica", "I", 6)
+                    pdf.set_font("Inter", "I", 6)
                     pdf.cell(_gc_cw - 2, 4, "Sem preview", align="C")
 
                 # Ad name
-                _gy = y0 + _g_th + 2
+                _gy = y0 + _g_th + 3
                 pdf.set_xy(gx + 2, _gy)
                 pdf.set_text_color(*_WH)
-                pdf.set_font("Helvetica", "B", 6.5)
+                pdf.set_font("Inter", "B", 6.5)
                 pdf.cell(_gc_cw - 4, 4,
-                         _s(str(grow.get("ad_name", "-"))[:40]))
+                         str(grow.get("ad_name", "-"))[:40])
 
                 # Headline
                 _g_title = grow.get("title", "") or grow.get("name", "") or ""
                 if _g_title and str(_g_title) != "nan":
                     pdf.set_xy(gx + 2, _gy + 4)
                     pdf.set_text_color(*_GR)
-                    pdf.set_font("Helvetica", "I", 5.5)
+                    pdf.set_font("Inter", "I", 5.5)
                     pdf.cell(_gc_cw - 4, 3,
-                             _s(str(_g_title)[:50]))
+                             str(_g_title)[:50])
 
                 # Metrics line 1: Spend · CTR · CPA
                 _gm1y = _gy + 8.5
                 pdf.set_xy(gx + 2, _gm1y)
                 pdf.set_text_color(200, 200, 200)
-                pdf.set_font("Helvetica", "", 5.5)
+                pdf.set_font("Inter", "", 5.5)
                 pdf.cell(_gc_cw - 4, 3.5,
-                         _s(f"Spend: {brl(grow.get('spend', 0))}  |  "
-                            f"CTR: {fmt_pct(grow.get('CTR', 0))}  |  "
-                            f"CPA: {brl(grow.get('CPA', 0))}"))
+                         f"Spend: {brl(grow.get('spend', 0))}  |  "
+                         f"CTR: {fmt_pct(grow.get('CTR', 0))}  |  "
+                         f"CPA: {brl(grow.get('CPA', 0))}")
 
                 # Metrics line 2: Conv · ROAS
                 _g_purch = grow.get("purchases", 0)
                 if _g_purch and float(_g_purch) > 0:
                     pdf.set_xy(gx + 2, _gm1y + 4)
                     pdf.cell(_gc_cw - 4, 3.5,
-                             _s(f"Conv: {fmt_int(_g_purch)}  |  "
-                                f"ROAS: {fmt_dec(grow.get('ROAS', 0), suffix='x')}"))
+                             f"Conv: {fmt_int(_g_purch)}  |  "
+                             f"ROAS: {fmt_dec(grow.get('ROAS', 0), suffix='x')}")
 
                 # Fatigue badge
                 _g_freq = float(grow.get("avg_freq", 0) or 0)
@@ -3068,9 +3196,9 @@ def _generate_pdf():
                     pdf.set_xy(gx + 2, _gm1y + 8)
                     pdf.set_fill_color(230, 81, 0)
                     pdf.set_text_color(255, 255, 255)
-                    pdf.set_font("Helvetica", "B", 5)
+                    pdf.set_font("Inter", "B", 5)
                     pdf.cell(22, 3.5,
-                             _s(f"Freq: {_g_freq:.1f}"),
+                             f"Freq: {_g_freq:.1f}",
                              fill=True, align="C")
 
             pdf.set_y(y0 + _gc_h)
@@ -3151,7 +3279,7 @@ def _generate_pdf():
         ))
         fig.add_trace(go.Bar(
             y=top10_cr["ad_name"].apply(lambda n: str(n)[:30]),
-            x=top10_cr["purchases"], name="Conversoes",
+            x=top10_cr["purchases"], name="Convers\u00f5es",
             orientation="h", marker_color="#4FC3F7",
             text=top10_cr["purchases"].apply(fmt_int), textposition="auto",
         ))
@@ -3164,13 +3292,13 @@ def _generate_pdf():
         _chart(fig, h=400)
 
     else:
-        pdf.set_font("Helvetica", "I", 10)
+        pdf.set_font("Inter", "I", 10)
         pdf.set_text_color(*_GR)
         pdf.cell(0, 10, "Sem dados de criativos para os filtros selecionados.",
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE — GA4 (se disponivel)
+    #  PAGE — GA4 (se dispon\u00edvel)
     # ══════════════════════════════════════════════════════════════════════
     _pdf_ga4 = _get_ga4_traffic()
     if not _pdf_ga4.empty:
@@ -3186,15 +3314,15 @@ def _generate_pdf():
         _ga4_nsrc = _pdf_ga4["source"].nunique() if "source" in _pdf_ga4.columns else 0
 
         _insight(
-            f"{fmt_int(_g_sess)} sessoes de {_ga4_nsrc} fontes | "
-            f"Bounce Rate medio: {fmt_pct(_g_bounce)}"
+            f"{fmt_int(_g_sess)} sess\u00f5es de {_ga4_nsrc} fontes | "
+            f"Bounce Rate m\u00e9dio: {fmt_pct(_g_bounce)}"
         )
 
-        _section("KPIs de Trafego - Google Analytics 4", _TL)
+        _section("KPIs de Tr\u00e1fego \u2014 Google Analytics 4", _TL)
         _kpis([
-            ("Sessoes", fmt_int(_g_sess), None),
-            ("Usuarios", fmt_int(_g_users), None),
-            ("Novos Usuarios", fmt_int(_g_new), None),
+            ("Sess\u00f5es", fmt_int(_g_sess), None),
+            ("Usu\u00e1rios", fmt_int(_g_users), None),
+            ("Novos Usu\u00e1rios", fmt_int(_g_new), None),
             ("Pageviews", fmt_int(_g_pvs), None),
             ("Bounce Rate", fmt_pct(_g_bounce), None),
             ("Engagement Rate", fmt_pct(_g_engage), None),
@@ -3203,7 +3331,7 @@ def _generate_pdf():
         # GA4 daily trend
         _pdf_ga4d = _get_ga4_daily()
         if not _pdf_ga4d.empty and "date" in _pdf_ga4d.columns:
-            _section("Tendencia Diaria - Sessoes & Engagement Rate", _TL)
+            _section("Tend\u00eancia Di\u00e1ria \u2014 Sess\u00f5es & Engagement Rate", _TL)
             _gd = _pdf_ga4d.copy()
             _gd["_sessions"] = _ga4_col(_gd, "sessions")
             _gd["_engage"] = _ga4_col(_gd, "engagementRate")
@@ -3221,12 +3349,12 @@ def _generate_pdf():
 
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=_gda["date"], y=_gda["_sessions"], name="Sessoes",
+                x=_gda["date"], y=_gda["_sessions"], name="Sess\u00f5es",
                 line=dict(color="#26A69A", width=1), opacity=0.4,
                 fill="tozeroy", fillcolor="rgba(38,166,154,0.07)",
             ))
             fig.add_trace(go.Scatter(
-                x=_gda["date"], y=_gda["sessions_ma7"], name="Sessoes MA7",
+                x=_gda["date"], y=_gda["sessions_ma7"], name="Sess\u00f5es MA7",
                 line=dict(color="#26A69A", width=3),
             ))
             fig.add_trace(go.Scatter(
@@ -3235,7 +3363,7 @@ def _generate_pdf():
             ))
             fig.update_layout(
                 height=350,
-                yaxis=dict(title="Sessoes", showgrid=True, gridcolor="rgba(255,255,255,0.06)"),
+                yaxis=dict(title="Sess\u00f5es", showgrid=True, gridcolor="rgba(255,255,255,0.06)"),
                 yaxis2=dict(title="Engagement Rate (%)", overlaying="y",
                             side="right", showgrid=False),
                 xaxis=dict(showgrid=False),
@@ -3244,7 +3372,7 @@ def _generate_pdf():
             _chart(fig)
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE — Cross-Channel (se disponivel)
+    #  PAGE — Cross-Channel (se dispon\u00edvel)
     # ══════════════════════════════════════════════════════════════════════
     if not _pdf_ga4.empty:
         _pdf_paid = _is_paid_traffic(_pdf_ga4)
@@ -3260,7 +3388,7 @@ def _generate_pdf():
 
         if _p_sess > 0 or _p_conv > 0:
             pdf.add_page()
-            _heading("Cross-Channel - Meta + GA4", 14)
+            _heading("Cross-Channel \u2014 Meta + GA4", 14)
 
             _x_cps = safe_div(total_spend, _p_sess)
             _x_cpa = safe_div(total_spend, _p_conv)
@@ -3268,19 +3396,19 @@ def _generate_pdf():
             _x_pass = safe_div(_p_sess, total_clicks, 100)
 
             _insight(
-                f"Taxa de passagem Meta->GA4: {fmt_pct(_x_pass)} | "
+                f"Taxa de passagem Meta\u2192GA4: {fmt_pct(_x_pass)} | "
                 f"ROAS Meta: {fmt_dec(roas, suffix='x')} vs ROAS GA4: {fmt_dec(_x_roas, suffix='x')}\n"
-                f"{fmt_int(_p_sess)} sessoes pagas | {fmt_int(_p_conv)} conversoes GA4 | "
+                f"{fmt_int(_p_sess)} sess\u00f5es pagas | {fmt_int(_p_conv)} convers\u00f5es GA4 | "
                 f"Receita GA4: {brl(_p_rev)}"
             )
 
             # Cross funnel
-            _section("Funil Completo - Meta Ads -> Google Analytics 4", _TL)
+            _section("Funil Completo \u2014 Meta Ads \u2192 Google Analytics 4", _TL)
             _cross_f = [
-                ("Impressoes (Meta)", total_imp),
+                ("Impress\u00f5es (Meta)", total_imp),
                 ("Cliques (Meta)", total_clicks),
-                ("Sessoes (GA4)", _p_sess),
-                ("Conversoes (GA4)", _p_conv),
+                ("Sess\u00f5es (GA4)", _p_sess),
+                ("Convers\u00f5es (GA4)", _p_conv),
                 ("Receita (GA4)", _p_rev),
             ]
             _cf_labels = [f[0] for f in _cross_f]
@@ -3296,21 +3424,21 @@ def _generate_pdf():
             fig.update_layout(height=350, showlegend=False)
             _chart(fig, w=230, h=350)
 
-            _section("KPIs Cruzadas - Meta Ads + GA4", _TL)
+            _section("KPIs Cruzadas \u2014 Meta Ads + GA4", _TL)
             _kpis([
                 ("Investimento Meta", brl(total_spend), None),
-                ("Sessoes GA4 (paid)", fmt_int(_p_sess), None),
-                ("Custo/Sessao", brl(_x_cps), None),
-                ("Conversoes GA4", fmt_int(_p_conv), None),
+                ("Sess\u00f5es GA4 (paid)", fmt_int(_p_sess), None),
+                ("Custo/Sess\u00e3o", brl(_x_cps), None),
+                ("Convers\u00f5es GA4", fmt_int(_p_conv), None),
                 ("CPA (GA4)", brl(_x_cpa), None),
                 ("ROAS (GA4)", fmt_dec(_x_roas, suffix="x"), None),
             ])
 
     # ══════════════════════════════════════════════════════════════════════
-    #  PAGE — Recomendacoes
+    #  PAGE — Recomenda\u00e7\u00f5es
     # ══════════════════════════════════════════════════════════════════════
     pdf.add_page()
-    _heading("Diagnostico & Recomendacoes", 14)
+    _heading("Diagn\u00f3stico & Recomenda\u00e7\u00f5es", 14)
 
     _ca_for_recs_pdf = None
     if not df_ad.empty:
@@ -3319,12 +3447,10 @@ def _generate_pdf():
     _recs_pdf = _generate_recommendations(roas, cpa, ctr, avg_freq, target_roas, target_cpa, _ca_for_recs_pdf)
 
     for _rtitle, _rdesc in _recs_pdf:
-        _clean_title = _rtitle.encode("latin-1", errors="replace").decode("latin-1")
-        _clean_desc = _rdesc.encode("latin-1", errors="replace").decode("latin-1")
-        _section(_s(_clean_title), _GN)
+        _section(str(_rtitle), _GN)
         pdf.set_text_color(*_GR)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.multi_cell(pdf.w - 30, 5, _s(_clean_desc))
+        pdf.set_font("Inter", "", 8)
+        pdf.multi_cell(pdf.w - 30, 5, str(_rdesc))
         pdf.ln(2)
 
     # Cost of inaction
@@ -3334,11 +3460,11 @@ def _generate_pdf():
         _fat_pdf = _fat_ads_pdf[_fat_ads_pdf["avg_freq"] >= FATIGUE_THRESHOLD]
         if not _fat_pdf.empty:
             _waste = _fat_pdf["spend"].sum()
-            _section("Custo de Inacao - Criativos com Fadiga", _RD)
+            _section("Custo de Ina\u00e7\u00e3o \u2014 Criativos com Fadiga", _RD)
             _insight(
-                f"{len(_fat_pdf)} criativos com freq >= {FATIGUE_THRESHOLD} "
-                f"consumindo {brl(_waste)} ({fmt_pct(safe_div(_waste, total_spend, 100))} do orcamento)\n"
-                f"Pausar/substituir pode liberar ate {brl(_waste * 0.3)} para reinvestir"
+                f"{len(_fat_pdf)} criativos com freq \u2265 {FATIGUE_THRESHOLD} "
+                f"consumindo {brl(_waste)} ({fmt_pct(safe_div(_waste, total_spend, 100))} do or\u00e7amento)\n"
+                f"Pausar/substituir pode liberar at\u00e9 {brl(_waste * 0.3)} para reinvestir"
             )
 
     return bytes(pdf.output())
