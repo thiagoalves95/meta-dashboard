@@ -1434,10 +1434,8 @@ with tab_funnel:
             prev_label, prev_val = funnel_data[i - 1]
             curr_label, curr_val = funnel_data[i]
             rate = safe_div(curr_val, prev_val, 100)
-            drop = 100 - rate
-            _d = f"-{drop:.1f}% drop" if drop > 0 else "0%"
             _rate_cards.append(kpi_card(
-                f"{prev_label} → {curr_label}", f"{rate:.1f}%", _d, "🔻", delta_inverse=True,
+                f"{prev_label} → {curr_label}", f"{rate:.1f}%", icon="🔻",
             ))
         st.markdown("".join(_rate_cards), unsafe_allow_html=True)
 
